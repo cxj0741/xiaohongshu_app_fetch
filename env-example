@@ -1,0 +1,16 @@
+
+
+# Appium Server 配置
+APPIUM_SERVER_URL=
+
+# 默认设备配置 (这些可以被函数参数覆盖)
+DEFAULT_DEVICE_NAME=
+DEFAULT_PLATFORM_VERSION=
+
+# 小红书应用信息
+XHS_APP_PACKAGE=
+XHS_APP_ACTIVITY=
+
+# 其他 Appium Capabilities (注意: 从 .env 读取的是字符串, 需要转换类型)
+APPIUM_NO_RESET=
+APPIUM_NEW_COMMAND_TIMEOUT=
