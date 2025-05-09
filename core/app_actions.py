@@ -37,7 +37,7 @@ def is_on_homepage(driver, timeout=1):
         # print(f"调试：检测首页元素时发生错误: {e}") # 调试时可以打开
         return False
 
-def navigate_to_home(driver, max_back_presses=5, check_interval=0.5, home_check_timeout=1):
+def navigate_to_home(driver, max_back_presses=10, check_interval=0.5, home_check_timeout=1):
     """
     尝试通过按返回键并检测底部导航栏（或其他首页特征元素）来导航到应用首页。
 
@@ -160,13 +160,13 @@ def perform_search(driver, keyword, timeout=10):
 def open_filter_panel(driver, timeout=10):
     """
     在搜索结果页面，确保详细的筛选面板是展开的。
-    它会尝试点击顶部的“全部”TAB来触发筛选面板的显示。
+    它会尝试点击顶部的TAB来触发筛选面板的显示。
 
     :param driver: Appium WebDriver 实例
     :param timeout: 等待元素出现的超时时间
     :return: True 如果成功打开或已打开，False 如果失败
     """
-    # 特征元素：用于判断详细筛选面板是否已经可见，例如“排序依据”这个文本标签
+    # 特征元素：用于判断详细筛选面板是否已经可见，例如"排序依据"这个文本标签
     # 你需要用 Appium Inspector 确认这个标签的可靠定位器
     detailed_filter_indicator_locator = (AppiumBy.XPATH, "//*[@text='排序依据']") # 示例，请用Inspector确认
 
@@ -179,10 +179,10 @@ def open_filter_panel(driver, timeout=10):
         print("筛选面板已可见。")
         return True
     except TimeoutException:
-        # 如果筛选面板不可见，则尝试点击“全部”TAB来展开它
-        print("筛选面板当前不可见或未完全加载，尝试点击“全部”TAB...")
+        # 如果筛选面板不可见，则尝试点击"全部"TAB来展开它
+        print("筛选面板当前不可见或未完全加载，尝试点击'全部'TAB...")
         try:
-            # 定位“全部”TAB
+            # 定位"全部"TAB
             # 根据你的截图 image_0b737d.png，它的 text 是 "全部"
             # 优先使用 Accessibility ID (如果 content-desc 是 "全部") 或精确的 XPath
             
@@ -194,14 +194,14 @@ def open_filter_panel(driver, timeout=10):
             all_tab_locator_by_text = (AppiumBy.XPATH, "//android.widget.TextView[@text='全部']") # 示例，请用Inspector确认
                                                                                             # 并确保它是顶部TAB的那个
             
-            # 你需要用Inspector确定最可靠的定位器来点击那个顶部的“全部”TAB
+            # 你需要用Inspector确定最可靠的定位器来点击那个顶部的"全部"TAB
             # 假设它的父容器或它自己是可点击的
 
             all_tab_button = WebDriverWait(driver, timeout).until(
                 EC.element_to_be_clickable(all_tab_locator_by_text) # 或者你找到的更可靠的定位器
             )
             all_tab_button.click()
-            print("已点击“全部”TAB。")
+            print("已点击'全部'TAB。")
 
             # 等待详细筛选面板的特征元素出现
             WebDriverWait(driver, timeout).until(
@@ -210,10 +210,10 @@ def open_filter_panel(driver, timeout=10):
             print("已成功打开/显示详细筛选面板。")
             return True
         except TimeoutException:
-            print(f"错误：点击“全部”TAB后，在{timeout}秒内未找到详细筛选面板的特征元素。")
+            print(f"错误：点击'全部'TAB后，在{timeout}秒内未找到详细筛选面板的特征元素。")
             return False
         except Exception as e:
-            print(f"点击“全部”TAB或等待筛选面板展开时发生错误: {e}")
+            print(f"点击'全部'TAB或等待筛选面板展开时发生错误: {e}")
             return False
     except Exception as e_outer:
         print(f"检查或打开筛选面板时发生未知错误: {e_outer}")
@@ -307,7 +307,7 @@ def click_filter_option(driver, option_text_or_desc, timeout=5):
     
 def apply_sort_by_filter(driver, option_text, timeout=5):
     """
-    应用“排序依据”筛选。
+    应用"排序依据"筛选。
     :param driver: Appium WebDriver 实例
     :param option_text: 例如 "综合", "最新", "最多点赞", "最多评论", "最多收藏"
     :param timeout: 等待元素出现的超时时间
@@ -323,7 +323,7 @@ def apply_sort_by_filter(driver, option_text, timeout=5):
 
 def apply_note_type_filter(driver, option_text, timeout=5):
     """
-    应用“笔记类型”筛选。
+    应用"笔记类型"筛选。
     :param driver: Appium WebDriver 实例
     :param option_text: 例如 "不限", "视频", "图文", "直播"
     :param timeout: 等待元素出现的超时时间
@@ -334,7 +334,7 @@ def apply_note_type_filter(driver, option_text, timeout=5):
 
 def apply_publish_time_filter(driver, option_text, timeout=5):
     """
-    应用“发布时间”筛选。
+    应用"发布时间"筛选。
     :param driver: Appium WebDriver 实例
     :param option_text: 例如 "不限", "一天内", "一周内", "半年内"
     :param timeout: 等待元素出现的超时时间
@@ -345,7 +345,7 @@ def apply_publish_time_filter(driver, option_text, timeout=5):
 
 def apply_search_scope_filter(driver, option_text, timeout=5):
     """
-    应用“搜索范围”筛选。
+    应用"搜索范围"筛选。
     :param driver: Appium WebDriver 实例
     :param option_text: 例如 "不限", "已看过", "未看过", "已关注"
     :param timeout: 等待元素出现的超时时间
@@ -356,7 +356,7 @@ def apply_search_scope_filter(driver, option_text, timeout=5):
 
 def apply_location_distance_filter(driver, option_text, timeout=5):
     """
-    应用“位置距离”筛选。
+    应用"位置距离"筛选。
     :param driver: Appium WebDriver 实例
     :param option_text: 例如 "不限", "同城", "附近"
     :param timeout: 等待元素出现的超时时间
@@ -367,13 +367,13 @@ def apply_location_distance_filter(driver, option_text, timeout=5):
 
 def reset_filters(driver, timeout=5):
     """
-    点击筛选面板底部的“重置”按钮。
+    点击筛选面板底部的"重置"按钮。
     假设筛选面板已打开。
     """
     print("尝试重置筛选条件...")
     try:
-        # 定位“重置”按钮，根据图片它的文字就是“重置”
-        # 你需要用 Appium Inspector 确认“重置”按钮最可靠的定位器
+        # 定位"重置"按钮，根据图片它的文字就是"重置"
+        # 你需要用 Appium Inspector 确认"重置"按钮最可靠的定位器
         reset_button_locator = (AppiumBy.XPATH, f"//android.widget.TextView[@text='重置']") # 示例
         
         reset_button = WebDriverWait(driver, timeout).until(
@@ -384,7 +384,7 @@ def reset_filters(driver, timeout=5):
         time.sleep(1) # 等待生效
         return True
     except TimeoutException:
-        print(f"错误：“重置”按钮在{timeout}秒内未找到或不可点击。")
+        print(f"错误：重置按钮在{timeout}秒内未找到或不可点击。")
         return False
     except Exception as e:
         print(f"点击重置按钮时发生错误: {e}")
@@ -392,14 +392,14 @@ def reset_filters(driver, timeout=5):
 
 def confirm_or_collapse_filters(driver, timeout=5):
     """
-    尝试点击筛选面板底部的“收起”或可能的“完成”按钮。
+    尝试点击筛选面板底部的"收起"或可能的"完成"按钮。
     如果这些按钮存在的话。如果筛选是即时应用的，则此步骤可能不需要。
     假设筛选面板已打开。
     """
     print("尝试确认或收起筛选面板...")
     try:
-        # 定位“收起”按钮，根据图片它的文字就是“收起”
-        # 你需要用 Appium Inspector 确认“收起”按钮最可靠的定位器
+        # 定位"收起"按钮，根据图片它的文字就是"收起"
+        # 你需要用 Appium Inspector 确认"收起"按钮最可靠的定位器
         collapse_button_locator = (AppiumBy.XPATH, f"//android.widget.TextView[@text='收起']") # 示例
         
         collapse_button = WebDriverWait(driver, timeout).until(
@@ -410,7 +410,7 @@ def confirm_or_collapse_filters(driver, timeout=5):
         time.sleep(1) # 等待面板收起或列表刷新
         return True
     except TimeoutException:
-        print(f"提示：“收起”或“完成”按钮在{timeout}秒内未找到，可能筛选已即时应用或不需要此操作。")
+        print(f"提示：收起或完成按钮在{timeout}秒内未找到，可能筛选已即时应用或不需要此操作。")
         return True # 认为操作也算完成，因为可能不需要这个按钮
     except Exception as e:
         print(f"点击收起/完成按钮时发生错误: {e}")
@@ -485,7 +485,7 @@ def apply_multiple_filters(driver,
         confirm_or_collapse_filters(driver)
         return True # 没有筛选被要求，也算成功
 
-    # 3. 应用完所有筛选后，尝试点击“收起”或让面板自动消失
+    # 3. 应用完所有筛选后，尝试点击"收起"或让面板自动消失
     print("所有指定筛选已尝试应用，尝试确认/收起筛选面板...")
     if not confirm_or_collapse_filters(driver): # 假设 confirm_or_collapse_filters 存在
         print("警告：未能成功点击'收起'或'完成'按钮，但筛选可能已部分或全部应用。")
@@ -500,25 +500,29 @@ import random
 from selenium.webdriver.common.actions.pointer_input import PointerInput
 from selenium.webdriver.common.actions import interaction
 
-def human_like_scroll(driver, direction="down",
+def human_like_scroll(driver, direction="down", swipe_count=30,
                       base_duration_ms=700, duration_variance_ms=400,
                       pre_delay_s_min=0.2, pre_delay_s_max=0.5,
-                      post_delay_s_min=0.3, post_delay_s_max=0.8):
+                      post_delay_s_min=0.3, post_delay_s_max=0.8,
+                      between_swipes_delay_min=0.5, between_swipes_delay_max=1.2):
     """
     执行一个带有类人延迟和可变时长的滑动/滚动操作。
     使用 W3C Actions 和单个触摸指针。
 
     :param driver: Appium WebDriver 实例。
     :param direction: 滑动方向，可选 "down", "up", "left", "right"。
+    :param swipe_count: 连续滑动的次数。
     :param base_duration_ms: 滑动的基础持续时间（毫秒）。
     :param duration_variance_ms: 持续时间的最大随机变化量（毫秒，可正可负）。
-    :param pre_delay_s_min: 滑动前最小延迟（秒）。
-    :param pre_delay_s_max: 滑动前最大延迟（秒）。
-    :param post_delay_s_min: 滑动后最小延迟（秒）。
-    :param post_delay_s_max: 滑动后最大延迟（秒）。
-    :return: True 如果滑动成功执行，False 如果发生错误。
+    :param pre_delay_s_min: 首次滑动前最小延迟（秒）。
+    :param pre_delay_s_max: 首次滑动前最大延迟（秒）。
+    :param post_delay_s_min: 最后一次滑动后最小延迟（秒）。
+    :param post_delay_s_max: 最后一次滑动后最大延迟（秒）。
+    :param between_swipes_delay_min: 多次滑动之间的最小延迟（秒）。
+    :param between_swipes_delay_max: 多次滑动之间的最大延迟（秒）。
+    :return: True 如果所有滑动成功执行，False 如果发生错误。
     """
-    print(f"执行类人滑动: 方向 '{direction}'")
+    print(f"执行类人滑动: 方向 '{direction}', 次数 {swipe_count}")
 
     # 1. 滑动前随机延迟
     pre_delay = random.uniform(pre_delay_s_min, pre_delay_s_max)
@@ -534,66 +538,86 @@ def human_like_scroll(driver, direction="down",
         print(f"  错误: 获取屏幕尺寸失败 - {e}")
         return False
 
-    # 3. 根据方向计算滑动的起始点和结束点
-    scroll_magnitude_ratio = random.uniform(0.55, 0.75) 
-
-    if direction == "down": 
-        start_x, end_x = width // 2, width // 2
-        start_y = int(height * random.uniform(0.75, 0.85))
-        end_y = int(start_y - height * scroll_magnitude_ratio)
-        end_y = max(int(height * 0.15), end_y) 
-    elif direction == "up": 
-        start_x, end_x = width // 2, width // 2
-        start_y = int(height * random.uniform(0.15, 0.25))
-        end_y = int(start_y + height * scroll_magnitude_ratio)
-        end_y = min(int(height * 0.85), end_y) 
-    elif direction == "left": 
-        start_y, end_y = height // 2, height // 2
-        start_x = int(width * random.uniform(0.75, 0.85))
-        end_x = int(start_x - width * scroll_magnitude_ratio)
-        end_x = max(int(width * 0.15), end_x)
-    elif direction == "right": 
-        start_y, end_y = height // 2, height // 2
-        start_x = int(width * random.uniform(0.15, 0.25))
-        end_x = int(start_x + width * scroll_magnitude_ratio)
-        end_x = min(int(width * 0.85), end_x)
-    else:
-        print(f"  错误: 未知的滑动方向 '{direction}'。支持 'up', 'down', 'left', 'right'。")
-        return False
-
-    # 4. 计算随机的滑动持续时间
-    variance = random.uniform(-abs(duration_variance_ms), abs(duration_variance_ms))
-    actual_duration_ms = int(max(150, base_duration_ms + variance)) 
-
-    print(f"  起始点: ({start_x}, {start_y}), 结束点: ({end_x}, {end_y}), 预计持续时间: {actual_duration_ms} ms")
-
-    # 5. 执行W3C Actions滑动
-    try:
-        # 创建一个触摸指针输入源
-        finger = PointerInput(interaction.POINTER_TOUCH, "finger1")
+    successful_swipes = 0
+    
+    # 执行指定次数的滑动
+    for swipe_index in range(swipe_count):
+        print(f"  执行第 {swipe_index + 1}/{swipe_count} 次滑动...")
         
-        # 按顺序调用方法来构建动作序列到 finger 对象中
-        finger.create_pointer_move(duration=0, x=start_x, y=start_y, origin='viewport')
-        finger.create_pointer_down(button=0) # 或者 button=0
-        # 修正：create_pause 的参数是位置参数，表示暂停的秒数
-        finger.create_pause(random.uniform(0.02, 0.08)) 
-        finger.create_pointer_move(duration=actual_duration_ms, x=end_x, y=end_y, origin='viewport')
-        finger.create_pointer_up(button=0) # 或者 button=0
-        
-        # driver.perform() 期望接收一个包含已编码动作序列的列表。
-        # PointerInput 对象（如此处的 finger）的 .encode() 方法会返回其内部动作序列的编码表示。
-        driver.perform([finger.encode()]) 
+        # 3. 根据方向计算滑动的起始点和结束点
+        # 每次滑动可以有轻微的随机偏移，使滑动看起来更自然
+        scroll_magnitude_ratio = random.uniform(0.55, 0.75) 
+        x_offset = random.randint(-20, 20)  # 水平方向的随机偏移
 
-        print(f"  滑动操作 '{direction}' 完成。")
+        if direction == "down": 
+            start_x, end_x = width // 2 + x_offset, width // 2 + x_offset
+            start_y = int(height * random.uniform(0.75, 0.85))
+            end_y = int(start_y - height * scroll_magnitude_ratio)
+            end_y = max(int(height * 0.15), end_y) 
+        elif direction == "up": 
+            start_x, end_x = width // 2 + x_offset, width // 2 + x_offset
+            start_y = int(height * random.uniform(0.15, 0.25))
+            end_y = int(start_y + height * scroll_magnitude_ratio)
+            end_y = min(int(height * 0.85), end_y) 
+        elif direction == "left": 
+            start_y, end_y = height // 2 + x_offset, height // 2 + x_offset
+            start_x = int(width * random.uniform(0.75, 0.85))
+            end_x = int(start_x - width * scroll_magnitude_ratio)
+            end_x = max(int(width * 0.15), end_x)
+        elif direction == "right": 
+            start_y, end_y = height // 2 + x_offset, height // 2 + x_offset
+            start_x = int(width * random.uniform(0.15, 0.25))
+            end_x = int(start_x + width * scroll_magnitude_ratio)
+            end_x = min(int(width * 0.85), end_x)
+        else:
+            print(f"  错误: 未知的滑动方向 '{direction}'。支持 'up', 'down', 'left', 'right'。")
+            return False
 
-        # 6. 滑动后随机延迟
-        post_delay = random.uniform(post_delay_s_min, post_delay_s_max)
-        print(f"  滑动后延迟: {post_delay:.2f} 秒")
-        time.sleep(post_delay)
-        return True
+        # 4. 计算随机的滑动持续时间
+        variance = random.uniform(-abs(duration_variance_ms), abs(duration_variance_ms))
+        actual_duration_ms = int(max(150, base_duration_ms + variance)) 
 
-    except Exception as e:
-        print(f"  执行滑动操作时发生错误: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+        print(f"  起始点: ({start_x}, {start_y}), 结束点: ({end_x}, {end_y}), 预计持续时间: {actual_duration_ms} ms")
+
+        # 5. 执行W3C Actions滑动
+        try:
+            # 创建一个触摸指针输入源
+            finger = PointerInput(interaction.POINTER_TOUCH, "finger1")
+            
+            # 按顺序调用方法来构建动作序列到 finger 对象中
+            finger.create_pointer_move(duration=0, x=start_x, y=start_y, origin='viewport')
+            finger.create_pointer_down(button=0)
+            finger.create_pause(random.uniform(0.02, 0.08)) 
+            finger.create_pointer_move(duration=actual_duration_ms, x=end_x, y=end_y, origin='viewport')
+            finger.create_pointer_up(button=0)
+            
+            # 使用 ActionChains 来执行滑动操作
+            from selenium.webdriver.common.action_chains import ActionChains
+            actions = ActionChains(driver, devices=[finger])
+            actions.perform()
+
+            print(f"  滑动操作 '{direction}' 第 {swipe_index + 1} 次完成。")
+            successful_swipes += 1
+            
+            # 如果不是最后一次滑动，则添加滑动间的延迟
+            if swipe_index < swipe_count - 1:
+                between_delay = random.uniform(between_swipes_delay_min, between_swipes_delay_max)
+                print(f"  滑动间延迟: {between_delay:.2f} 秒")
+                time.sleep(between_delay)
+
+        except Exception as e:
+            print(f"  执行第 {swipe_index + 1} 次滑动操作时发生错误: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # 即使一次滑动失败，也尝试继续执行后续滑动
+            continue
+
+    # 6. 最后一次滑动后的随机延迟
+    post_delay = random.uniform(post_delay_s_min, post_delay_s_max)
+    print(f"  滑动后延迟: {post_delay:.2f} 秒")
+    time.sleep(post_delay)
+    
+    print(f"滑动操作完成，成功执行 {successful_swipes}/{swipe_count} 次滑动。")
+    # 如果至少有一次滑动成功，则返回 True
+    return successful_swipes > 0
