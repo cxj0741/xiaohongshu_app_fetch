@@ -7,11 +7,11 @@ import time
 
 def is_on_homepage(driver, timeout=1):
     """
-    检查当前是否在首页（通过检测底部导航栏的“首页”或其他特征元素）。
+    检查当前是否在首页（通过检测底部导航栏的"首页"或其他特征元素）。
     可以根据实际情况调整定位器。
     """
     try:
-        # 尝试定位底部导航栏中的“首页”文字标签，或其他能代表首页的稳定元素
+        # 尝试定位底部导航栏中的"首页"文字标签，或其他能代表首页的稳定元素
         # XPath 示例: 查找 content-desc 为 "首页" 的元素，或者 text 为 "首页" 的特定类型元素
         # 你需要用 Appium Inspector 确认最稳定可靠的定位器
         home_tab_locator_by_accessibility_id = (AppiumBy.ACCESSIBILITY_ID, "首页")
@@ -49,9 +49,9 @@ def navigate_to_home(driver, max_back_presses=5, check_interval=0.5, home_check_
     """
     print("尝试导航到首页...")
 
-    # 1. 直接尝试点击底部导航栏的“首页”按钮 (如果能定位到且可靠，这是首选)
+    # 1. 直接尝试点击底部导航栏的"首页"按钮 (如果能定位到且可靠，这是首选)
     try:
-        # 根据图片和常见应用设计，底部“首页”TAB的 content-desc 通常是 “首页”
+        # 根据图片和常见应用设计，底部"首页"TAB的 content-desc 通常是 "首页"
         # 你需要用 Appium Inspector 确认！
         home_button_locator = (AppiumBy.ACCESSIBILITY_ID, "首页") # 这是一个常见的Accessibility ID
         # 或者 XPath: (AppiumBy.XPATH, "//android.widget.FrameLayout[@content-desc='首页']")
@@ -76,7 +76,7 @@ def navigate_to_home(driver, max_back_presses=5, check_interval=0.5, home_check_
         print(f"尝试直接点击首页按钮时发生错误: {e}，将尝试使用返回键。")
 
 
-    # 2. 如果直接点击首页按钮不成功或不可用，则使用“按返回键 + 检测”的逻辑
+    # 2. 如果直接点击首页按钮不成功或不可用，则使用"按返回键 + 检测"的逻辑
     for attempt in range(max_back_presses):
         if is_on_homepage(driver, home_check_timeout):
             print(f"已在首页 (尝试 {attempt+1}/{max_back_presses} 次返回后检测成功)。")
@@ -103,6 +103,59 @@ def navigate_to_home(driver, max_back_presses=5, check_interval=0.5, home_check_
         print(f"尝试 {max_back_presses} 次返回后，仍未能导航到首页。")
         return False
 
+def perform_search(driver, keyword, timeout=10):
+    """
+    Performs a search in the Xiaohongshu app.
+    1. Clicks the search icon on the current page (assumed to be homepage or similar).
+    2. Enters the keyword (as the input field is expected to be auto-focused).
+    3. Presses the Enter key to submit the search.
+
+    :param driver: Appium WebDriver instance
+    :param keyword: The search term (string)
+    :param timeout: Timeout for locating the initial search icon
+    :return: True if search initiated successfully, False otherwise.
+    """
+    try:
+        # 1. 点击搜索图标（代码保持不变）
+        print("执行搜索操作：点击搜索入口...")
+        search_icon_locator = (AppiumBy.ACCESSIBILITY_ID, "搜索") 
+        
+        search_icon = WebDriverWait(driver, timeout).until(
+            EC.element_to_be_clickable(search_icon_locator)
+        )
+        search_icon.click()
+        print("已点击搜索入口。等待搜索页面加载并输入框聚焦...")
+
+        time.sleep(1.5)
+        
+        # 2. 输入关键词（使用替代方法）
+        print(f"输入关键词 '{keyword}' (因输入框已自动聚焦)...")
+        # 替代方法1: 使用driver的send_keys方法
+        # 尝试找到搜索输入框
+        try:
+            search_box = WebDriverWait(driver, 3).until(
+                EC.element_to_be_clickable((AppiumBy.CLASS_NAME, "android.widget.EditText"))
+            )
+            search_box.send_keys(keyword)
+        except:
+            # 如果找不到输入框，尝试使用driver的keyboard方法
+            # 这依赖于输入框已被聚焦
+            driver.keyboard.send_keys(keyword)
+            
+        print("关键词输入完毕。")
+
+        # 3. 按回车键提交（保持不变）
+        print("按回车键提交搜索...")
+        driver.press_keycode(66)  # 66是Android中的ENTER键码
+        print("已按回车键，搜索已提交。")
+        
+        return True
+        
+    except Exception as e:
+        print(f"执行搜索操作时发生未知错误: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 # 你将来可能还会添加其他通用函数，例如：
 # def handle_common_popup(driver):
 #     pass
