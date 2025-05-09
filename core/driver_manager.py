@@ -4,6 +4,8 @@ from appium import webdriver
 # 你需要确保这个导入路径根据你的项目结构是正确的
 from config.capabilities import get_xiaohongshu_capabilities, APPIUM_SERVER_URL
 
+
+# todo无法使用程序启动小红书
 class AppiumDriverContextManager:
     """
     一个 Appium WebDriver 上下文管理器类，用于自动创建和关闭 driver 会话。
