@@ -156,6 +156,346 @@ def perform_search(driver, keyword, timeout=10):
         import traceback
         traceback.print_exc()
         return False
+    
+def open_filter_panel(driver, timeout=10):
+    """
+    在搜索结果页面，确保详细的筛选面板是展开的。
+    它会尝试点击顶部的“全部”TAB来触发筛选面板的显示。
+
+    :param driver: Appium WebDriver 实例
+    :param timeout: 等待元素出现的超时时间
+    :return: True 如果成功打开或已打开，False 如果失败
+    """
+    # 特征元素：用于判断详细筛选面板是否已经可见，例如“排序依据”这个文本标签
+    # 你需要用 Appium Inspector 确认这个标签的可靠定位器
+    detailed_filter_indicator_locator = (AppiumBy.XPATH, "//*[@text='排序依据']") # 示例，请用Inspector确认
+
+    try:
+        # 1. 首先检查详细筛选面板是否已经可见
+        print("检查筛选面板是否已可见...")
+        WebDriverWait(driver, 2).until( # 用较短的超时尝试检查
+            EC.presence_of_element_located(detailed_filter_indicator_locator)
+        )
+        print("筛选面板已可见。")
+        return True
+    except TimeoutException:
+        # 如果筛选面板不可见，则尝试点击“全部”TAB来展开它
+        print("筛选面板当前不可见或未完全加载，尝试点击“全部”TAB...")
+        try:
+            # 定位“全部”TAB
+            # 根据你的截图 image_0b737d.png，它的 text 是 "全部"
+            # 优先使用 Accessibility ID (如果 content-desc 是 "全部") 或精确的 XPath
+            
+            # 尝试1: 如果 "全部" TAB 有唯一的 content-desc="全部"
+            # all_tab_locator = (AppiumBy.ACCESSIBILITY_ID, "全部")
+            
+            # 尝试2: 使用 text 属性定位 (更通用，但要确保它是正确的那个 "全部")
+            # 注意：如果页面上有多个元素的 text 都是 "全部"，这个XPath需要更精确
+            all_tab_locator_by_text = (AppiumBy.XPATH, "//android.widget.TextView[@text='全部']") # 示例，请用Inspector确认
+                                                                                            # 并确保它是顶部TAB的那个
+            
+            # 你需要用Inspector确定最可靠的定位器来点击那个顶部的“全部”TAB
+            # 假设它的父容器或它自己是可点击的
+
+            all_tab_button = WebDriverWait(driver, timeout).until(
+                EC.element_to_be_clickable(all_tab_locator_by_text) # 或者你找到的更可靠的定位器
+            )
+            all_tab_button.click()
+            print("已点击“全部”TAB。")
+
+            # 等待详细筛选面板的特征元素出现
+            WebDriverWait(driver, timeout).until(
+                EC.presence_of_element_located(detailed_filter_indicator_locator)
+            )
+            print("已成功打开/显示详细筛选面板。")
+            return True
+        except TimeoutException:
+            print(f"错误：点击“全部”TAB后，在{timeout}秒内未找到详细筛选面板的特征元素。")
+            return False
+        except Exception as e:
+            print(f"点击“全部”TAB或等待筛选面板展开时发生错误: {e}")
+            return False
+    except Exception as e_outer:
+        print(f"检查或打开筛选面板时发生未知错误: {e_outer}")
+        return False
+
+# todo  点击最新的时候点击不到   
+def click_filter_option(driver, option_text_or_desc, timeout=5):
+    """
+    尝试点击指定的筛选选项。
+    这个函数假设筛选面板已经可见。
+    它会尝试多种策略来定位和点击元素，优先考虑可点击的容器。
+
+    :param driver: Appium WebDriver 实例
+    :param option_text_or_desc: 筛选选项的文本或 content-desc (Accessibility ID)
+    :param timeout: 等待元素出现的超时时间
+    :return: True 如果点击成功，False 如果失败
+    """
+    print(f"尝试点击筛选选项: '{option_text_or_desc}'...")
+    element_clicked = False
+
+    # 策略1: 尝试使用 Accessibility ID (content-desc) 直接定位可点击元素
+    # 这种策略假设 option_text_or_desc 本身就是某个可点击元素 (如 FrameLayout) 的 content-desc
+    try:
+        print(f"  策略1: 尝试通过 Accessibility ID '{option_text_or_desc}' 定位可点击元素...")
+        locator_by_desc = (AppiumBy.ACCESSIBILITY_ID, option_text_or_desc)
+        option_element = WebDriverWait(driver, timeout).until(
+            EC.element_to_be_clickable(locator_by_desc)
+        )
+        option_element.click()
+        element_clicked = True
+        print(f"  已通过 Accessibility ID 点击: '{option_text_or_desc}'。")
+    except TimeoutException:
+        print(f"  策略1: 通过 Accessibility ID 未找到或不可点击 '{option_text_or_desc}'。")
+    except Exception as e:
+        print(f"  策略1: 通过 Accessibility ID 点击时发生错误: {e}。")
+
+    if element_clicked:
+        time.sleep(1.5) # 给UI一些响应时间
+        return True
+
+    # 策略2: 尝试通过 XPath 查找包含指定文本的、可点击的父容器或自身
+    # (主要针对 TextView 本身 clickable=false，但其父容器 clickable=true 的情况)
+    if not element_clicked:
+        try:
+            # 这个XPath会查找一个clickable='true'的任何类型(*)的元素，
+            # 该元素内部包含一个文本为 option_text_or_desc 的 TextView。
+            # 或者，如果TextView本身是可点击的（虽然之前看到是false，但作为备选）。
+            # [1] 表示选择满足条件的第一个祖先或自身，可以根据需要调整。
+            # 你需要根据 Inspector 中 TextView 和其可点击父容器的实际层级和类名来优化此 XPath。
+            # 一个更具体的例子可能是：
+            # xpath_query = f"//android.widget.FrameLayout[@clickable='true' and .//android.widget.TextView[@text='{option_text_or_desc}']]"
+            # 或者，如果TextView的直接父级是可点击的：
+            # xpath_query = f"//android.widget.TextView[@text='{option_text_or_desc}']/parent::*[@clickable='true']"
+            
+            # 通用尝试：找到文本，然后找它最近的可点击祖先；或者文本元素本身可点击
+            xpath_query_ancestor = f"//android.widget.TextView[@text='{option_text_or_desc}']/ancestor-or-self::*[@clickable='true'][1]"
+            # 备选：直接定位文本为 option_text_or_desc 且 class 为 TextView 的元素（作为最后手段）
+            xpath_query_text_direct = f"//android.widget.TextView[@text='{option_text_or_desc}']"
+
+            print(f"  策略2: 尝试通过 XPath '{xpath_query_ancestor}' 定位可点击容器...")
+            
+            # 优先尝试定位可点击的祖先或自身
+            option_element = WebDriverWait(driver, timeout).until(
+                EC.element_to_be_clickable((AppiumBy.XPATH, xpath_query_ancestor))
+            )
+            option_element.click()
+            element_clicked = True
+            print(f"  已通过 XPath (可点击祖先/自身) 点击: '{option_text_or_desc}'。")
+
+        except TimeoutException:
+            print(f"  策略2: 通过 XPath (可点击祖先/自身) 未找到或不可点击 '{option_text_or_desc}'。尝试直接点击文本...")
+            # 回退：尝试直接点击文本元素 (即使 clickable=false，有时也可能有效)
+            try:
+                option_element = WebDriverWait(driver, 1).until( # 用较短的超时
+                    EC.presence_of_element_located((AppiumBy.XPATH, xpath_query_text_direct))
+                )
+                option_element.click()
+                element_clicked = True
+                print(f"  策略2回退: 已直接点击文本元素 '{option_text_or_desc}'。")
+            except Exception as e_direct:
+                print(f"  策略2回退: 直接点击文本元素 '{option_text_or_desc}' 失败: {e_direct}")
+        except Exception as e:
+            print(f"  策略2: 通过 XPath 点击时发生错误: {e}")
+
+    if element_clicked:
+        time.sleep(1.5) # 给UI一些响应时间，可以根据应用实际响应速度调整
+        return True
+    else:
+        print(f"错误：所有策略均未能成功点击筛选选项 '{option_text_or_desc}'。")
+        return False
+    
+def apply_sort_by_filter(driver, option_text, timeout=5):
+    """
+    应用“排序依据”筛选。
+    :param driver: Appium WebDriver 实例
+    :param option_text: 例如 "综合", "最新", "最多点赞", "最多评论", "最多收藏"
+    :param timeout: 等待元素出现的超时时间
+    :return: True 如果点击成功，False 如果失败
+    """
+    print(f"尝试应用排序依据: '{option_text}'...")
+    # 假设在调用此函数前，筛选面板已经通过 open_filter_panel(driver) 打开
+    # 如果筛选面板可能收起，可以在这里再次调用 open_filter_panel 或检查
+    # if not open_filter_panel(driver): # 确保面板已打开
+    #     print(f"错误: 打开筛选面板失败，无法应用排序选项 '{option_text}'。")
+    #     return False
+    return click_filter_option(driver, option_text, timeout)
+
+def apply_note_type_filter(driver, option_text, timeout=5):
+    """
+    应用“笔记类型”筛选。
+    :param driver: Appium WebDriver 实例
+    :param option_text: 例如 "不限", "视频", "图文", "直播"
+    :param timeout: 等待元素出现的超时时间
+    :return: True 如果点击成功，False 如果失败
+    """
+    print(f"尝试应用笔记类型: '{option_text}'...")
+    return click_filter_option(driver, option_text, timeout)
+
+def apply_publish_time_filter(driver, option_text, timeout=5):
+    """
+    应用“发布时间”筛选。
+    :param driver: Appium WebDriver 实例
+    :param option_text: 例如 "不限", "一天内", "一周内", "半年内"
+    :param timeout: 等待元素出现的超时时间
+    :return: True 如果点击成功，False 如果失败
+    """
+    print(f"尝试应用发布时间: '{option_text}'...")
+    return click_filter_option(driver, option_text, timeout)
+
+def apply_search_scope_filter(driver, option_text, timeout=5):
+    """
+    应用“搜索范围”筛选。
+    :param driver: Appium WebDriver 实例
+    :param option_text: 例如 "不限", "已看过", "未看过", "已关注"
+    :param timeout: 等待元素出现的超时时间
+    :return: True 如果点击成功，False 如果失败
+    """
+    print(f"尝试应用搜索范围: '{option_text}'...")
+    return click_filter_option(driver, option_text, timeout)
+
+def apply_location_distance_filter(driver, option_text, timeout=5):
+    """
+    应用“位置距离”筛选。
+    :param driver: Appium WebDriver 实例
+    :param option_text: 例如 "不限", "同城", "附近"
+    :param timeout: 等待元素出现的超时时间
+    :return: True 如果点击成功，False 如果失败
+    """
+    print(f"尝试应用位置距离: '{option_text}'...")
+    return click_filter_option(driver, option_text, timeout)
+
+def reset_filters(driver, timeout=5):
+    """
+    点击筛选面板底部的“重置”按钮。
+    假设筛选面板已打开。
+    """
+    print("尝试重置筛选条件...")
+    try:
+        # 定位“重置”按钮，根据图片它的文字就是“重置”
+        # 你需要用 Appium Inspector 确认“重置”按钮最可靠的定位器
+        reset_button_locator = (AppiumBy.XPATH, f"//android.widget.TextView[@text='重置']") # 示例
+        
+        reset_button = WebDriverWait(driver, timeout).until(
+            EC.element_to_be_clickable(reset_button_locator)
+        )
+        reset_button.click()
+        print("已点击重置按钮。")
+        time.sleep(1) # 等待生效
+        return True
+    except TimeoutException:
+        print(f"错误：“重置”按钮在{timeout}秒内未找到或不可点击。")
+        return False
+    except Exception as e:
+        print(f"点击重置按钮时发生错误: {e}")
+        return False
+
+def confirm_or_collapse_filters(driver, timeout=5):
+    """
+    尝试点击筛选面板底部的“收起”或可能的“完成”按钮。
+    如果这些按钮存在的话。如果筛选是即时应用的，则此步骤可能不需要。
+    假设筛选面板已打开。
+    """
+    print("尝试确认或收起筛选面板...")
+    try:
+        # 定位“收起”按钮，根据图片它的文字就是“收起”
+        # 你需要用 Appium Inspector 确认“收起”按钮最可靠的定位器
+        collapse_button_locator = (AppiumBy.XPATH, f"//android.widget.TextView[@text='收起']") # 示例
+        
+        collapse_button = WebDriverWait(driver, timeout).until(
+            EC.element_to_be_clickable(collapse_button_locator)
+        )
+        collapse_button.click()
+        print("已点击收起/完成按钮。")
+        time.sleep(1) # 等待面板收起或列表刷新
+        return True
+    except TimeoutException:
+        print(f"提示：“收起”或“完成”按钮在{timeout}秒内未找到，可能筛选已即时应用或不需要此操作。")
+        return True # 认为操作也算完成，因为可能不需要这个按钮
+    except Exception as e:
+        print(f"点击收起/完成按钮时发生错误: {e}")
+        return False
+    
+def apply_multiple_filters(driver,
+                           sort_by_option=None,
+                           note_type_option=None,
+                           publish_time_option=None,
+                           search_scope_option=None,
+                           location_distance_option=None,
+                           timeout_per_option=5):
+    """
+    应用一组指定的筛选条件。
+    如果某个筛选类别的参数为 None，则跳过该类别的筛选。
+
+    :param driver: Appium WebDriver 实例
+    :param sort_by_option: 排序选项文本，例如 "最新"
+    :param note_type_option: 笔记类型文本，例如 "视频"
+    :param publish_time_option: 发布时间文本，例如 "一天内"
+    :param search_scope_option: 搜索范围文本，例如 "未看过"
+    :param location_distance_option: 位置距离文本，例如 "附近"
+    :param timeout_per_option: 单个筛选选项点击的超时时间
+    :return: True 如果所有指定的筛选都成功尝试应用（不保证每个都成功点击，但会尝试），
+             False 如果打开筛选面板失败。
+    """
+    print("开始应用聚合筛选条件...")
+
+    # 1. 确保筛选面板已打开
+    if not open_filter_panel(driver): # 假设 open_filter_panel 存在且能打开筛选面板
+        print("错误：未能打开筛选面板，无法应用任何筛选条件。")
+        return False
+    
+    print("筛选面板已打开或已确认可见。")
+    any_filter_applied_or_attempted = False
+
+    # 2. 依次应用各个筛选条件
+    if sort_by_option:
+        any_filter_applied_or_attempted = True
+        print(f"  - 应用排序依据: {sort_by_option}")
+        if not apply_sort_by_filter(driver, sort_by_option, timeout=timeout_per_option):
+            print(f"  -- 应用排序依据 '{sort_by_option}' 失败。")
+            # 根据需求，你可以选择在这里直接 return False，或者记录失败并继续
+    
+    if note_type_option:
+        any_filter_applied_or_attempted = True
+        print(f"  - 应用笔记类型: {note_type_option}")
+        if not apply_note_type_filter(driver, note_type_option, timeout=timeout_per_option):
+            print(f"  -- 应用笔记类型 '{note_type_option}' 失败。")
+
+    if publish_time_option:
+        any_filter_applied_or_attempted = True
+        print(f"  - 应用发布时间: {publish_time_option}")
+        if not apply_publish_time_filter(driver, publish_time_option, timeout=timeout_per_option):
+            print(f"  -- 应用发布时间 '{publish_time_option}' 失败。")
+
+    if search_scope_option:
+        any_filter_applied_or_attempted = True
+        print(f"  - 应用搜索范围: {search_scope_option}")
+        if not apply_search_scope_filter(driver, search_scope_option, timeout=timeout_per_option):
+            print(f"  -- 应用搜索范围 '{search_scope_option}' 失败。")
+
+    if location_distance_option:
+        any_filter_applied_or_attempted = True
+        print(f"  - 应用位置距离: {location_distance_option}")
+        if not apply_location_distance_filter(driver, location_distance_option, timeout=timeout_per_option):
+            print(f"  -- 应用位置距离 '{location_distance_option}' 失败。")
+            
+    if not any_filter_applied_or_attempted:
+        print("未指定任何有效的筛选条件进行应用。")
+        # 即使没有应用筛选，也尝试收起面板（如果它之前被打开了）
+        confirm_or_collapse_filters(driver)
+        return True # 没有筛选被要求，也算成功
+
+    # 3. 应用完所有筛选后，尝试点击“收起”或让面板自动消失
+    print("所有指定筛选已尝试应用，尝试确认/收起筛选面板...")
+    if not confirm_or_collapse_filters(driver): # 假设 confirm_or_collapse_filters 存在
+        print("警告：未能成功点击'收起'或'完成'按钮，但筛选可能已部分或全部应用。")
+        # 即使收起失败，也可能筛选已经生效，所以这里不直接返回 False
+
+    print("聚合筛选条件应用流程结束。")
+    # 这个函数主要负责尝试应用，是否每个都成功取决于底层的点击函数
+    # 返回 True 表示流程执行完毕。具体是否每个选项都成功选中，需要看日志。
+    # 如果需要更严格的成功判断，可以在每个 apply_..._filter 失败时让整个函数返回 False。
+    return True
 # 你将来可能还会添加其他通用函数，例如：
 # def handle_common_popup(driver):
 #     pass
