@@ -496,6 +496,104 @@ def apply_multiple_filters(driver,
     # 返回 True 表示流程执行完毕。具体是否每个选项都成功选中，需要看日志。
     # 如果需要更严格的成功判断，可以在每个 apply_..._filter 失败时让整个函数返回 False。
     return True
-# 你将来可能还会添加其他通用函数，例如：
-# def handle_common_popup(driver):
-#     pass
+import random
+from selenium.webdriver.common.actions.pointer_input import PointerInput
+from selenium.webdriver.common.actions import interaction
+
+def human_like_scroll(driver, direction="down",
+                      base_duration_ms=700, duration_variance_ms=400,
+                      pre_delay_s_min=0.2, pre_delay_s_max=0.5,
+                      post_delay_s_min=0.3, post_delay_s_max=0.8):
+    """
+    执行一个带有类人延迟和可变时长的滑动/滚动操作。
+    使用 W3C Actions 和单个触摸指针。
+
+    :param driver: Appium WebDriver 实例。
+    :param direction: 滑动方向，可选 "down", "up", "left", "right"。
+    :param base_duration_ms: 滑动的基础持续时间（毫秒）。
+    :param duration_variance_ms: 持续时间的最大随机变化量（毫秒，可正可负）。
+    :param pre_delay_s_min: 滑动前最小延迟（秒）。
+    :param pre_delay_s_max: 滑动前最大延迟（秒）。
+    :param post_delay_s_min: 滑动后最小延迟（秒）。
+    :param post_delay_s_max: 滑动后最大延迟（秒）。
+    :return: True 如果滑动成功执行，False 如果发生错误。
+    """
+    print(f"执行类人滑动: 方向 '{direction}'")
+
+    # 1. 滑动前随机延迟
+    pre_delay = random.uniform(pre_delay_s_min, pre_delay_s_max)
+    print(f"  滑动前延迟: {pre_delay:.2f} 秒")
+    time.sleep(pre_delay)
+
+    # 2. 获取屏幕尺寸
+    try:
+        window_size = driver.get_window_size()
+        width = window_size['width']
+        height = window_size['height']
+    except Exception as e:
+        print(f"  错误: 获取屏幕尺寸失败 - {e}")
+        return False
+
+    # 3. 根据方向计算滑动的起始点和结束点
+    scroll_magnitude_ratio = random.uniform(0.55, 0.75) 
+
+    if direction == "down": 
+        start_x, end_x = width // 2, width // 2
+        start_y = int(height * random.uniform(0.75, 0.85))
+        end_y = int(start_y - height * scroll_magnitude_ratio)
+        end_y = max(int(height * 0.15), end_y) 
+    elif direction == "up": 
+        start_x, end_x = width // 2, width // 2
+        start_y = int(height * random.uniform(0.15, 0.25))
+        end_y = int(start_y + height * scroll_magnitude_ratio)
+        end_y = min(int(height * 0.85), end_y) 
+    elif direction == "left": 
+        start_y, end_y = height // 2, height // 2
+        start_x = int(width * random.uniform(0.75, 0.85))
+        end_x = int(start_x - width * scroll_magnitude_ratio)
+        end_x = max(int(width * 0.15), end_x)
+    elif direction == "right": 
+        start_y, end_y = height // 2, height // 2
+        start_x = int(width * random.uniform(0.15, 0.25))
+        end_x = int(start_x + width * scroll_magnitude_ratio)
+        end_x = min(int(width * 0.85), end_x)
+    else:
+        print(f"  错误: 未知的滑动方向 '{direction}'。支持 'up', 'down', 'left', 'right'。")
+        return False
+
+    # 4. 计算随机的滑动持续时间
+    variance = random.uniform(-abs(duration_variance_ms), abs(duration_variance_ms))
+    actual_duration_ms = int(max(150, base_duration_ms + variance)) 
+
+    print(f"  起始点: ({start_x}, {start_y}), 结束点: ({end_x}, {end_y}), 预计持续时间: {actual_duration_ms} ms")
+
+    # 5. 执行W3C Actions滑动
+    try:
+        # 创建一个触摸指针输入源
+        finger = PointerInput(interaction.POINTER_TOUCH, "finger1")
+        
+        # 按顺序调用方法来构建动作序列到 finger 对象中
+        finger.create_pointer_move(duration=0, x=start_x, y=start_y, origin='viewport')
+        finger.create_pointer_down(button=0) # 或者 button=0
+        # 修正：create_pause 的参数是位置参数，表示暂停的秒数
+        finger.create_pause(random.uniform(0.02, 0.08)) 
+        finger.create_pointer_move(duration=actual_duration_ms, x=end_x, y=end_y, origin='viewport')
+        finger.create_pointer_up(button=0) # 或者 button=0
+        
+        # driver.perform() 期望接收一个包含已编码动作序列的列表。
+        # PointerInput 对象（如此处的 finger）的 .encode() 方法会返回其内部动作序列的编码表示。
+        driver.perform([finger.encode()]) 
+
+        print(f"  滑动操作 '{direction}' 完成。")
+
+        # 6. 滑动后随机延迟
+        post_delay = random.uniform(post_delay_s_min, post_delay_s_max)
+        print(f"  滑动后延迟: {post_delay:.2f} 秒")
+        time.sleep(post_delay)
+        return True
+
+    except Exception as e:
+        print(f"  执行滑动操作时发生错误: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
