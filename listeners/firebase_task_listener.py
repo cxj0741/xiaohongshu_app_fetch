@@ -8,7 +8,7 @@ import os # 用于拼接路径
 # 你可能需要根据你的实际 services 结构调整导入路径
 # 例如: from ..services import note_service, product_service
 # 或者: import sys; sys.path.append(os.path.join(os.path.dirname(__file__), '..')); from services import your_service_module
-from services import your_data_scraping_service # 替换为你的实际服务模块名
+from services import note_service, product_service  # 替换为你的实际服务模块
 
 # --- 配置区 ---
 # 建议将密钥文件路径和集合名称也放入配置文件或环境变量中
@@ -43,33 +43,55 @@ def dispatch_task_to_service(task_id, task_data):
     """
     根据 task_data 中的 'actions' 调用相应的 service 函数。
     """
-    global db # 确保可以使用全局db变量
+    global db
     if not db:
         print(f"[{task_id}] Firestore客户端未初始化，无法更新任务。")
         return
 
     action = task_data.get('actions')
     parameters = task_data.get('parameters', {})
-    target_url = task_data.get('targetUrl') # 确保任务中有这个字段
-
-    print(f"[{task_id}] 开始处理任务: Action='{action}', Target='{target_url}'")
+    
+    print(f"[{task_id}] 开始处理任务: Action='{action}', Parameters='{parameters}'")
 
     try:
         result = None
-        # --- 在这里根据 action 调用你的 services ---
-        if action == "scrape_note_details":
-            # 假设你的服务中有这个函数
-            result = your_data_scraping_service.scrape_note_details(target_url, parameters)
-        elif action == "scrape_product_info":
-            result = your_data_scraping_service.scrape_product_info(target_url, parameters)
-        # ... 添加其他 action 的判断和调用 ...
+        # --- 根据 action 调用对应的服务，使用正确的函数名 ---
+        if action == "scrape_note":
+            # 使用你文件中已定义的函数名：fetch_notes_by_keyword
+            from services.note_service import fetch_notes_by_keyword
+            from core.driver_manager import get_driver
+            
+            driver = get_driver()  # 获取Appium驱动
+            if not driver:
+                raise Exception("无法获取Appium驱动")
+                
+            result = fetch_notes_by_keyword(
+                driver=driver,
+                keyword=parameters.get('keyword'),
+                swipe_count=parameters.get('swipe_count', 10),
+                filters=parameters.get('filters')
+            )
+        elif action == "scrape_product":
+            # 使用product_service中定义的函数：fetch_products_by_keyword
+            from services.product_service import fetch_products_by_keyword
+            from core.driver_manager import get_driver
+            
+            driver = get_driver()  # 获取Appium驱动
+            if not driver:
+                raise Exception("无法获取Appium驱动")
+                
+            result = fetch_products_by_keyword(
+                driver=driver,
+                keyword=parameters.get('keyword'),
+                swipe_count=parameters.get('swipe_count', 10)
+            )
         else:
             raise ValueError(f"未知的 action: '{action}'")
 
         # 任务成功，更新 Firestore
         db.collection(TASKS_COLLECTION_NAME).document(task_id).update({
             'status': 'completed',
-            'result': result, # 确保 result 是 Firestore 兼容的类型
+            'result': result,  # 确保 result 是 Firestore 兼容的类型
             'updatedAt': firestore.SERVER_TIMESTAMP
         })
         print(f"[{task_id}] 任务处理成功！")
@@ -77,6 +99,9 @@ def dispatch_task_to_service(task_id, task_data):
     except Exception as e:
         error_message = f"任务处理失败: {type(e).__name__} - {e}"
         print(f"[{task_id}] {error_message}")
+        import traceback
+        traceback.print_exc()  # 打印详细错误信息
+        
         # 任务失败，更新 Firestore
         db.collection(TASKS_COLLECTION_NAME).document(task_id).update({
             'status': 'failed',
@@ -101,6 +126,7 @@ def on_task_snapshot(collection_snapshot, changes, read_time):
             print(f"--- 新任务出现 (ID: {task_id}) ---")
             task_ref = db.collection(TASKS_COLLECTION_NAME).document(task_id)
             try:
+                # 更新任务状态为处理中
                 task_ref.update({
                     'status': 'processing',
                     'processingStartedAt': firestore.SERVER_TIMESTAMP,
@@ -109,33 +135,44 @@ def on_task_snapshot(collection_snapshot, changes, read_time):
                 print(f"[{task_id}] 状态更新为 'processing'")
 
                 # 使用线程处理任务，避免阻塞 Firestore 的快照监听器
-                # 这对于耗时的 Appium 操作尤为重要
                 thread = threading.Thread(target=dispatch_task_to_service, args=(task_id, task_data))
                 thread.daemon = True # 设置为守护线程，主程序退出时它们也会退出
                 thread.start()
 
             except Exception as firestore_error:
                 print(f"[{task_id}] 更新Firestore为 'processing' 时出错: {firestore_error}")
-        # 你也可以在这里处理 MODIFIED 或 REMOVED 的情况，如果需要的话
-        # elif change.type.name == 'MODIFIED':
-        #     print(f"任务 {task_id} 被修改: {task_data}")
-
+        # 可以添加对处理中但超时的任务进行监控
+        elif change.type.name == 'MODIFIED' and task_data.get('status') == 'processing':
+            # 这里可以添加超时检测逻辑
+            pass
 
 def start_listening():
-    global db, _query_watch # 确保可以使用和修改全局变量
+    global db, _query_watch
     if not db:
-        if not initialize_firebase(): # 如果db未初始化，则尝试初始化
+        if not initialize_firebase():
             print("无法启动监听，因为Firebase初始化失败。")
             return
 
-    # 创建一个查询，只监听状态为 'pending' 的任务，并按创建时间升序排列
-    query = db.collection(TASKS_COLLECTION_NAME).where('status', '==', 'pending').order_by('createdAt')
-
-    # on_snapshot 会在后台线程中持续监听变化
-    _query_watch = query.on_snapshot(on_task_snapshot)
-
-    print(f"[*] 正在监听 Firestore 中 '{TASKS_COLLECTION_NAME}' 集合的 'pending' 任务...")
-    print("[*] 监听器已启动。主程序需要保持运行。")
+    try:
+        # 创建一个查询，只监听状态为 'pending' 的任务
+        # 注意：如果还没有创建索引，可以暂时不使用order_by
+        query = db.collection(TASKS_COLLECTION_NAME).where('status', '==', 'pending')
+        # 创建索引后可以恢复使用:
+        # query = db.collection(TASKS_COLLECTION_NAME).where('status', '==', 'pending').order_by('createdAt')
+        
+        # 启动监听
+        _query_watch = query.on_snapshot(on_task_snapshot)
+        
+        print(f"[*] 正在监听 Firestore 中 '{TASKS_COLLECTION_NAME}' 集合的 'pending' 任务...")
+        print("[*] 监听器已启动。主程序需要保持运行。")
+        
+    except Exception as e:
+        print(f"启动监听时发生错误: {e}")
+        if "requires an index" in str(e):
+            print("需要创建索引。请访问错误信息中的链接创建索引，或暂时移除order_by子句。")
+        return False
+    
+    return True
 
 def stop_listening():
     global _query_watch
@@ -152,6 +189,7 @@ if __name__ == '__main__':
     if initialize_firebase():
         start_listening()
         try:
+            print("监听器已启动。按Ctrl+C结束程序...")
             while True:
                 time.sleep(60) # 主线程保持存活，让后台线程工作
         except KeyboardInterrupt:
