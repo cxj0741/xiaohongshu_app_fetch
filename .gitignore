@@ -152,3 +152,5 @@ output/logs/*.log
 .pyright_cache/
 
 test/
+
+firebase-service-account-key.json
