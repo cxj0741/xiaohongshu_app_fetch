@@ -33,27 +33,8 @@ pip install -r requirements.txt
     * 作为系统的中央任务队列和数据存储。
     * 存储任务的详细参数、当前状态（pending, processing, completed, failed）、执行结果或错误信息。
 
-## 📁 目录结构 (主要)
 
 ## 🔧 环境准备
-├── api/                      # Flask API接口、Pydantic数据模型、任务创建服务
-│   ├── init.py
-│   ├── app.py                # API主应用
-│   ├── models.py             # Pydantic请求/响应模型
-│   └── task_creation_service.py # 任务写入Firestore的逻辑
-├── core/                     # 核心组件，如Appium驱动管理器
-│   ├── init.py
-│   └── driver_manager.py     # AppiumDriverContextManager
-├── listeners/                # Firebase实时监听器
-│   ├── init.py
-│   └── firebase_task_listener.py # 监听并分发任务
-├── services/                 # Appium自动化脚本的具体实现
-│   ├── init.py
-│   ├── note_service.py       # 笔记相关自动化服务
-│   └── product_service.py    # 商品相关自动化服务
-├── firebase-service-account-key.json # Firebase Admin SDK服务账户密钥
-├── requirements.txt          # Python项目依赖
-└── README.md                 # 本说明文件
 
 在开始之前，请确保你的开发环境满足以下要求：
 
