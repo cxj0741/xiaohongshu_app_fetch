@@ -3,6 +3,8 @@ from firebase_admin import credentials, firestore
 import time
 import threading
 import os # 用于拼接路径
+import queue
+from threading import Semaphore, Thread
 
 # 假设你的 services 模块可以这样导入，并且里面有相应的处理函数
 # 你可能需要根据你的实际 services 结构调整导入路径
@@ -30,6 +32,11 @@ except Exception as e:
 # 全局 Firestore 客户端变量
 db = None
 
+# 任务队列和信号量，用于控制任务并发
+task_queue = queue.Queue()
+execution_semaphore = Semaphore(1)  # 限制同时只有1个任务执行
+is_worker_running = False  # 标记工作线程是否运行
+
 def initialize_firebase():
     global db
     try:
@@ -42,9 +49,9 @@ def initialize_firebase():
         print(f"Firebase Admin SDK 初始化失败: {e}")
         return False
 
-def dispatch_task_to_service(task_id, task_data):
+def process_task(task_id, task_data):
     """
-    根据 task_data 中的 'actions' 调用相应的 service 函数。
+    处理单个任务的函数
     """
     global db
     if not db:
@@ -63,7 +70,7 @@ def dispatch_task_to_service(task_id, task_data):
                 raise Exception("无法获取Appium驱动实例")
             
             result = None
-            # --- 根据 action 调用对应的服务，使用正确的函数名 ---
+            # 根据action调用对应服务
             if action == "scrape_note":
                 result = fetch_notes_by_keyword(
                     driver=driver,
@@ -80,10 +87,10 @@ def dispatch_task_to_service(task_id, task_data):
             else:
                 raise ValueError(f"未知的 action: '{action}'")
 
-        # 任务成功，更新 Firestore
+        # 任务成功，更新Firestore
         db.collection(TASKS_COLLECTION_NAME).document(task_id).update({
             'status': 'completed',
-            'result': result,  # 确保 result 是 Firestore 兼容的类型
+            'result': result,
             'updatedAt': firestore.SERVER_TIMESTAMP
         })
         print(f"[{task_id}] 任务处理成功！")
@@ -92,20 +99,86 @@ def dispatch_task_to_service(task_id, task_data):
         error_message = f"任务处理失败: {type(e).__name__} - {e}"
         print(f"[{task_id}] {error_message}")
         import traceback
-        traceback.print_exc()  # 打印详细错误信息
+        traceback.print_exc()
         
-        # 任务失败，更新 Firestore
+        # 任务失败，更新Firestore
         db.collection(TASKS_COLLECTION_NAME).document(task_id).update({
             'status': 'failed',
             'error': error_message,
             'updatedAt': firestore.SERVER_TIMESTAMP
         })
 
-# --- Firestore 任务监听与处理回调 ---
-_query_watch = None # 用于保存快照监听器，以便后续可以取消订阅
+def task_worker():
+    """
+    工作线程函数，不断从队列获取任务并执行
+    """
+    global is_worker_running
+    
+    print("[工作线程] 启动，等待处理任务...")
+    
+    try:
+        while is_worker_running:
+            try:
+                # 从队列获取任务，最多等待5秒
+                task_id, task_data = task_queue.get(timeout=5)
+                
+                print(f"[工作线程] 从队列获取任务: {task_id}")
+                
+                # 获取信号量，限制并发
+                execution_semaphore.acquire()
+                try:
+                    # 处理任务
+                    process_task(task_id, task_data)
+                finally:
+                    # 释放信号量
+                    execution_semaphore.release()
+                    # 标记任务完成
+                    task_queue.task_done()
+                    
+            except queue.Empty:
+                # 队列为空，继续等待
+                continue
+                
+    except Exception as e:
+        print(f"[工作线程] 发生错误: {e}")
+    finally:
+        print("[工作线程] 退出")
+
+def start_worker_thread():
+    """
+    启动工作线程
+    """
+    global is_worker_running
+    
+    if is_worker_running:
+        return  # 已经运行
+        
+    is_worker_running = True
+    worker = Thread(target=task_worker, daemon=True)
+    worker.start()
+    print("[主线程] 工作线程已启动")
+
+def stop_worker_thread():
+    """
+    停止工作线程
+    """
+    global is_worker_running
+    
+    if not is_worker_running:
+        return  # 已经停止
+        
+    is_worker_running = False
+    # 等待队列清空
+    if not task_queue.empty():
+        print("[主线程] 等待队列中的任务完成...")
+        task_queue.join()
+    print("[主线程] 工作线程已停止")
 
 def on_task_snapshot(collection_snapshot, changes, read_time):
-    global db # 确保可以使用全局db变量
+    """
+    Firestore快照变化回调函数
+    """
+    global db
     if not db:
         print("Firestore客户端未初始化，无法处理快照。")
         return
@@ -118,36 +191,35 @@ def on_task_snapshot(collection_snapshot, changes, read_time):
             print(f"--- 新任务出现 (ID: {task_id}) ---")
             task_ref = db.collection(TASKS_COLLECTION_NAME).document(task_id)
             try:
-                # 更新任务状态为处理中
+                # 更新任务状态为等待中
                 task_ref.update({
                     'status': 'processing',
                     'processingStartedAt': firestore.SERVER_TIMESTAMP,
                     'updatedAt': firestore.SERVER_TIMESTAMP
                 })
-                print(f"[{task_id}] 状态更新为 'processing'")
-
-                # 使用线程处理任务，避免阻塞 Firestore 的快照监听器
-                thread = threading.Thread(target=dispatch_task_to_service, args=(task_id, task_data))
-                thread.daemon = True # 设置为守护线程，主程序退出时它们也会退出
-                thread.start()
-
+                print(f"[{task_id}] 状态更新为 'processing'，加入任务队列")
+                
+                # 将任务添加到队列
+                task_queue.put((task_id, task_data))
+                
             except Exception as firestore_error:
                 print(f"[{task_id}] 更新Firestore为 'processing' 时出错: {firestore_error}")
-        # 可以添加对处理中但超时的任务进行监控
-        elif change.type.name == 'MODIFIED' and task_data.get('status') == 'processing':
-            # 这里可以添加超时检测逻辑
-            pass
 
 def start_listening():
+    """
+    开始监听Firestore任务
+    """
     global db, _query_watch
     if not db:
         if not initialize_firebase():
             print("无法启动监听，因为Firebase初始化失败。")
-            return
+            return False
 
     try:
-        # 创建一个查询，只监听状态为 'pending' 的任务
-        # 先不使用order_by，以避免索引问题
+        # 启动工作线程
+        start_worker_thread()
+        
+        # 创建查询，只监听状态为'pending'的任务
         query = db.collection(TASKS_COLLECTION_NAME).where('status', '==', 'pending')
         
         # 启动监听
@@ -155,20 +227,27 @@ def start_listening():
         
         print(f"[*] 正在监听 Firestore 中 '{TASKS_COLLECTION_NAME}' 集合的 'pending' 任务...")
         print("[*] 监听器已启动。主程序需要保持运行。")
+        return True
         
     except Exception as e:
         print(f"启动监听时发生错误: {e}")
         if "requires an index" in str(e):
             print("需要创建索引。请访问错误信息中的链接创建索引，或暂时移除order_by子句。")
         return False
-    
-    return True
 
 def stop_listening():
+    """
+    停止监听
+    """
     global _query_watch
+    
+    # 停止工作线程
+    stop_worker_thread()
+    
+    # 取消Firestore监听
     if _query_watch:
         print("[*] 正在停止监听 Firestore 任务...")
-        _query_watch.unsubscribe() # 取消订阅快照
+        _query_watch.unsubscribe()
         _query_watch = None
         print("[*] 监听已停止。")
     else:
@@ -177,15 +256,21 @@ def stop_listening():
 # 如果直接运行此文件进行测试，可以添加以下代码
 if __name__ == '__main__':
     if initialize_firebase():
-        start_listening()
-        try:
-            print("监听器已启动。按Ctrl+C结束程序...")
-            while True:
-                time.sleep(60) # 主线程保持存活，让后台线程工作
-        except KeyboardInterrupt:
-            print("\n程序被用户终止 (Ctrl+C)...")
-        finally:
-            stop_listening()
-            print("程序退出。")
+        if start_listening():
+            try:
+                print("监听器和任务处理器已启动。按Ctrl+C结束程序...")
+                while True:
+                    time.sleep(1)
+                    # 显示队列状态
+                    if task_queue.qsize() > 0:
+                        print(f"当前队列中有 {task_queue.qsize()} 个任务等待处理")
+                    time.sleep(59)  # 每分钟显示一次队列状态
+            except KeyboardInterrupt:
+                print("\n程序被用户终止 (Ctrl+C)...")
+            finally:
+                stop_listening()
+                print("程序退出。")
+        else:
+            print("启动监听失败，程序退出。")
     else:
         print("无法初始化Firebase，程序退出。")
