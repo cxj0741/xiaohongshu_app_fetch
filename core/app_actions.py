@@ -621,3 +621,108 @@ def human_like_scroll(driver, direction="down", swipe_count=30,
     print(f"滑动操作完成，成功执行 {successful_swipes}/{swipe_count} 次滑动。")
     # 如果至少有一次滑动成功，则返回 True
     return successful_swipes > 0
+
+def click_product_tab(driver, timeout=10):
+    """
+    在搜索结果页面点击"商品"标签，切换到商品搜索结果。
+    
+    :param driver: Appium WebDriver 实例
+    :param timeout: 等待元素出现的超时时间（秒）
+    :return: True 如果点击成功，False 如果失败
+    """
+    print("尝试点击'商品'标签...")
+    
+    try:
+        # 根据截图，尝试使用多种方式定位"商品"标签
+        
+        # 使用UiSelector定位文本为"商品"的元素
+        product_tab_locator = (AppiumBy.ANDROID_UIAUTOMATOR, 'new UiSelector().text("商品")')
+        
+        # 备选：使用XPath定位
+        product_tab_xpath = (AppiumBy.XPATH, "//android.widget.TextView[@text='商品']")
+        
+        # 等待元素可点击
+        WebDriverWait(driver, timeout).until(
+            EC.any_of(
+                EC.element_to_be_clickable(product_tab_locator),
+                EC.element_to_be_clickable(product_tab_xpath)
+            )
+        )
+        
+        # 尝试点击
+        try:
+            # 首先尝试使用UiSelector定位方式
+            product_element = driver.find_element(*product_tab_locator)
+            product_element.click()
+            print("已点击'商品'标签 (使用UiSelector方式)")
+        except Exception as e1:
+            print(f"使用UiSelector点击'商品'标签失败: {e1}，尝试使用XPath...")
+            # 如果第一种方式失败，尝试使用XPath
+            product_element = driver.find_element(*product_tab_xpath)
+            product_element.click()
+            print("已点击'商品'标签 (使用XPath方式)")
+        
+        # 等待页面响应
+        time.sleep(2)
+        print("商品列表应已加载")
+        return True
+        
+    except Exception as e:
+        print(f"点击'商品'标签失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+# 增强版：尝试点击指定的内容类型标签(商品、笔记、用户等)
+def click_content_type_tab(driver, tab_name, timeout=10):
+    """
+    在搜索结果页面点击指定的内容类型标签，如"商品"、"笔记"、"用户"等。
+    
+    :param driver: Appium WebDriver 实例
+    :param tab_name: 要点击的标签名称，如"商品"、"笔记"、"用户"等
+    :param timeout: 等待元素出现的超时时间（秒）
+    :return: True 如果点击成功，False 如果失败
+    """
+    print(f"尝试点击'{tab_name}'标签...")
+    
+    try:
+        # 使用UiSelector定位文本匹配的元素
+        tab_locator = (AppiumBy.ANDROID_UIAUTOMATOR, f'new UiSelector().text("{tab_name}")')
+        
+        # 备选：使用XPath定位
+        tab_xpath = (AppiumBy.XPATH, f"//android.widget.TextView[@text='{tab_name}']")
+        
+        # 等待元素可点击
+        tab_element = WebDriverWait(driver, timeout).until(
+            EC.any_of(
+                EC.element_to_be_clickable(tab_locator),
+                EC.element_to_be_clickable(tab_xpath)
+            )
+        )
+        
+        # 尝试点击找到的元素
+        if isinstance(tab_element, WebDriverWait):
+            # 如果返回的是WebDriverWait对象，需要找到实际元素
+            for locator in [tab_locator, tab_xpath]:
+                try:
+                    element = driver.find_element(*locator)
+                    element.click()
+                    print(f"已点击'{tab_name}'标签")
+                    break
+                except:
+                    continue
+        else:
+            # 如果已经是元素，直接点击
+            tab_element.click()
+            print(f"已点击'{tab_name}'标签")
+        
+        # 等待页面响应
+        time.sleep(2)
+        print(f"'{tab_name}'内容列表应已加载")
+        return True
+        
+    except Exception as e:
+        print(f"点击'{tab_name}'标签失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
