@@ -9,6 +9,9 @@ import os # 用于拼接路径
 # 例如: from ..services import note_service, product_service
 # 或者: import sys; sys.path.append(os.path.join(os.path.dirname(__file__), '..')); from services import your_service_module
 from services import note_service, product_service  # 替换为你的实际服务模块
+from services.note_service import fetch_notes_by_keyword
+from services.product_service import fetch_products_by_keyword
+from core.driver_manager import AppiumDriverContextManager
 
 # --- 配置区 ---
 # 建议将密钥文件路径和集合名称也放入配置文件或环境变量中
@@ -54,39 +57,28 @@ def dispatch_task_to_service(task_id, task_data):
     print(f"[{task_id}] 开始处理任务: Action='{action}', Parameters='{parameters}'")
 
     try:
-        result = None
-        # --- 根据 action 调用对应的服务，使用正确的函数名 ---
-        if action == "scrape_note":
-            # 使用你文件中已定义的函数名：fetch_notes_by_keyword
-            from services.note_service import fetch_notes_by_keyword
-            from core.driver_manager import get_driver
-            
-            driver = get_driver()  # 获取Appium驱动
+        # 使用上下文管理器获取驱动
+        with AppiumDriverContextManager() as driver:
             if not driver:
-                raise Exception("无法获取Appium驱动")
-                
-            result = fetch_notes_by_keyword(
-                driver=driver,
-                keyword=parameters.get('keyword'),
-                swipe_count=parameters.get('swipe_count', 10),
-                filters=parameters.get('filters')
-            )
-        elif action == "scrape_product":
-            # 使用product_service中定义的函数：fetch_products_by_keyword
-            from services.product_service import fetch_products_by_keyword
-            from core.driver_manager import get_driver
+                raise Exception("无法获取Appium驱动实例")
             
-            driver = get_driver()  # 获取Appium驱动
-            if not driver:
-                raise Exception("无法获取Appium驱动")
-                
-            result = fetch_products_by_keyword(
-                driver=driver,
-                keyword=parameters.get('keyword'),
-                swipe_count=parameters.get('swipe_count', 10)
-            )
-        else:
-            raise ValueError(f"未知的 action: '{action}'")
+            result = None
+            # --- 根据 action 调用对应的服务，使用正确的函数名 ---
+            if action == "scrape_note":
+                result = fetch_notes_by_keyword(
+                    driver=driver,
+                    keyword=parameters.get('keyword'),
+                    swipe_count=parameters.get('swipe_count', 10),
+                    filters=parameters.get('filters')
+                )
+            elif action == "scrape_product":
+                result = fetch_products_by_keyword(
+                    driver=driver,
+                    keyword=parameters.get('keyword'),
+                    swipe_count=parameters.get('swipe_count', 10)
+                )
+            else:
+                raise ValueError(f"未知的 action: '{action}'")
 
         # 任务成功，更新 Firestore
         db.collection(TASKS_COLLECTION_NAME).document(task_id).update({
@@ -155,10 +147,8 @@ def start_listening():
 
     try:
         # 创建一个查询，只监听状态为 'pending' 的任务
-        # 注意：如果还没有创建索引，可以暂时不使用order_by
+        # 先不使用order_by，以避免索引问题
         query = db.collection(TASKS_COLLECTION_NAME).where('status', '==', 'pending')
-        # 创建索引后可以恢复使用:
-        # query = db.collection(TASKS_COLLECTION_NAME).where('status', '==', 'pending').order_by('createdAt')
         
         # 启动监听
         _query_watch = query.on_snapshot(on_task_snapshot)
