@@ -507,11 +507,11 @@ def human_like_scroll(driver, direction="down", swipe_count=30,
                       between_swipes_delay_min=0.5, between_swipes_delay_max=1.2):
     """
     执行一个带有类人延迟和可变时长的滑动/滚动操作。
-    使用 W3C Actions 和单个触摸指针。
+    带有检测滑动到底部的逻辑。
 
     :param driver: Appium WebDriver 实例。
     :param direction: 滑动方向，可选 "down", "up", "left", "right"。
-    :param swipe_count: 连续滑动的次数。
+    :param swipe_count: 连续滑动的最大次数。
     :param base_duration_ms: 滑动的基础持续时间（毫秒）。
     :param duration_variance_ms: 持续时间的最大随机变化量（毫秒，可正可负）。
     :param pre_delay_s_min: 首次滑动前最小延迟（秒）。
@@ -522,7 +522,7 @@ def human_like_scroll(driver, direction="down", swipe_count=30,
     :param between_swipes_delay_max: 多次滑动之间的最大延迟（秒）。
     :return: True 如果所有滑动成功执行，False 如果发生错误。
     """
-    print(f"执行类人滑动: 方向 '{direction}', 次数 {swipe_count}")
+    print(f"执行类人滑动: 方向 '{direction}', 最大次数 {swipe_count}")
 
     # 1. 滑动前随机延迟
     pre_delay = random.uniform(pre_delay_s_min, pre_delay_s_max)
@@ -539,12 +539,28 @@ def human_like_scroll(driver, direction="down", swipe_count=30,
         return False
 
     successful_swipes = 0
+    previous_page_source = ""
+    same_page_count = 0
     
     # 执行指定次数的滑动
     for swipe_index in range(swipe_count):
         print(f"  执行第 {swipe_index + 1}/{swipe_count} 次滑动...")
         
-        # 3. 根据方向计算滑动的起始点和结束点
+        # 3. 检测是否到达底部（通过比较页面源码）
+        current_page_source = driver.page_source
+        
+        # 如果连续两次页面内容相同，说明可能已经到底部
+        if current_page_source == previous_page_source:
+            same_page_count += 1
+            if same_page_count >= 2:  # 连续相同2次，认为到底部
+                print(f"  检测到已滑动到底部（连续{same_page_count}次页面内容相同），停止滑动")
+                break
+        else:
+            same_page_count = 0  # 重置计数器
+            
+        previous_page_source = current_page_source
+        
+        # 4. 根据方向计算滑动的起始点和结束点
         # 每次滑动可以有轻微的随机偏移，使滑动看起来更自然
         scroll_magnitude_ratio = random.uniform(0.55, 0.75) 
         x_offset = random.randint(-20, 20)  # 水平方向的随机偏移
@@ -573,29 +589,17 @@ def human_like_scroll(driver, direction="down", swipe_count=30,
             print(f"  错误: 未知的滑动方向 '{direction}'。支持 'up', 'down', 'left', 'right'。")
             return False
 
-        # 4. 计算随机的滑动持续时间
+        # 5. 计算随机的滑动持续时间
         variance = random.uniform(-abs(duration_variance_ms), abs(duration_variance_ms))
         actual_duration_ms = int(max(150, base_duration_ms + variance)) 
 
         print(f"  起始点: ({start_x}, {start_y}), 结束点: ({end_x}, {end_y}), 预计持续时间: {actual_duration_ms} ms")
 
-        # 5. 执行W3C Actions滑动
+        # 6. 执行W3C Actions滑动
         try:
-            # 创建一个触摸指针输入源
-            finger = PointerInput(interaction.POINTER_TOUCH, "finger1")
+            # 使用更可靠的方式执行滑动（避免W3C Actions可能导致的权限问题）
+            driver.swipe(start_x, start_y, end_x, end_y, actual_duration_ms)
             
-            # 按顺序调用方法来构建动作序列到 finger 对象中
-            finger.create_pointer_move(duration=0, x=start_x, y=start_y, origin='viewport')
-            finger.create_pointer_down(button=0)
-            finger.create_pause(random.uniform(0.02, 0.08)) 
-            finger.create_pointer_move(duration=actual_duration_ms, x=end_x, y=end_y, origin='viewport')
-            finger.create_pointer_up(button=0)
-            
-            # 使用 ActionChains 来执行滑动操作
-            from selenium.webdriver.common.action_chains import ActionChains
-            actions = ActionChains(driver, devices=[finger])
-            actions.perform()
-
             print(f"  滑动操作 '{direction}' 第 {swipe_index + 1} 次完成。")
             successful_swipes += 1
             
@@ -610,15 +614,21 @@ def human_like_scroll(driver, direction="down", swipe_count=30,
             import traceback
             traceback.print_exc()
             
-            # 即使一次滑动失败，也尝试继续执行后续滑动
+            # 如果连续失败次数过多，提前退出避免无限失败
+            if successful_swipes == 0 and swipe_index >= 2:
+                print("  连续滑动失败，可能已到达边界或发生其他问题，停止滑动")
+                break
+            
+            # 短暂延迟后尝试继续
+            time.sleep(1)
             continue
 
-    # 6. 最后一次滑动后的随机延迟
+    # 7. 最后一次滑动后的随机延迟
     post_delay = random.uniform(post_delay_s_min, post_delay_s_max)
     print(f"  滑动后延迟: {post_delay:.2f} 秒")
     time.sleep(post_delay)
     
-    print(f"滑动操作完成，成功执行 {successful_swipes}/{swipe_count} 次滑动。")
+    print(f"滑动操作完成，成功执行 {successful_swipes}/{min(swipe_index+1, swipe_count)} 次滑动。")
     # 如果至少有一次滑动成功，则返回 True
     return successful_swipes > 0
 
