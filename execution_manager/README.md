@@ -1,0 +1,1 @@
+python -m execution_manager.adb_helper
