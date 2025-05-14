@@ -14,7 +14,7 @@ class AppiumDriverContextManager:
     def __init__(self, device_name=None, platform_version=None,
                  app_package=None, app_activity=None, no_reset=None,
                  new_command_timeout=None, server_url=None,
-                  system_port=None, chromedriver_port=None):
+                  system_port=None, chromedriver_port=None, wda_local_port=None):
         """
         初始化会话管理器。
         参数可以覆盖从 .env 或 config 文件中加载的默认配置。
@@ -31,7 +31,8 @@ class AppiumDriverContextManager:
             "no_reset": no_reset,
             "new_command_timeout": new_command_timeout,
             "system_port": system_port,               # <<<< 将参数存起来
-            "chromedriver_port": chromedriver_port    # <<<< 将参数存起来
+            "chromedriver_port": chromedriver_port,    # <<<< 将参数存起来
+            "wda_local_port": wda_local_port  # 添加wda_local_port
         }
         # 移除值为 None 的参数，以便 get_xiaohongshu_capabilities 中的默认值生效
         self.capabilities_args = {k: v for k, v in self.capabilities_args.items() if v is not None}

@@ -26,7 +26,7 @@ class ResourceAllocator:
             print(f"错误: 加载或解析 Appium 实例配置文件 '{absolute_config_path}' 失败: {e}")
             self.appium_servers_config = []
         
-        # 用于跟踪哪些 Appium 服务器 ID 和模拟器 ID 当前“繁忙”
+        # 用于跟踪哪些 Appium 服务器 ID 和模拟器 ID 当前"繁忙"
         # 使用集合 (set) 可以快速添加、删除和检查成员资格
         self._busy_server_ids = set()
         self._busy_emulator_ids = set()
@@ -40,10 +40,11 @@ class ResourceAllocator:
             一个包含分配信息的字典，例如：
             {
                 'appium_url': 'http://127.0.0.1:4723',
-                'emulator_id': '127.0.0.1:16384', // 这是从 adb_helper 获取的实际在线且匹配的模拟器ID
+                'emulator_id': '127.0.0.1:16384', 
                 'system_port': 8200, 
                 'chromedriver_port': 9515,
-                'appium_server_id': 'mumu_16384' // 服务器配置中的ID，用于后续释放
+                'wda_local_port': 8100,  # 添加这个字段
+                'appium_server_id': 'mumu_16384'
             }
             如果没有可用资源，则返回 None。
         """
@@ -59,7 +60,7 @@ class ResourceAllocator:
         for server_conf in self.appium_servers_config:
             server_id = server_conf.get('id')
             appium_url = server_conf.get('url')
-            intended_emulator_id = server_conf.get('intended_emulator_id') # 从配置中获取期望的模拟器ID
+            intended_emulator_id = server_conf.get('intended_emulator_id')
 
             # 1. 检查此 Appium 服务器是否空闲
             if server_id in self._busy_server_ids:
@@ -75,9 +76,10 @@ class ResourceAllocator:
                     
                     allocation = {
                         'appium_url': appium_url,
-                        'emulator_id': intended_emulator_id, # 使用配置中定义的 ID
+                        'emulator_id': intended_emulator_id,
                         'system_port': server_conf.get('system_port'),
                         'chromedriver_port': server_conf.get('chromedriver_port'),
+                        'wda_local_port': server_conf.get('wda_local_port'),  # 添加这一行
                         'appium_server_id': server_id
                     }
                     print(f"ResourceAllocator: 已分配服务器 '{server_id}' 给模拟器 '{intended_emulator_id}'.")
@@ -86,17 +88,6 @@ class ResourceAllocator:
                     print(f"ResourceAllocator: 模拟器 '{intended_emulator_id}' (服务器 '{server_id}' 的目标) 当前繁忙。")
             elif intended_emulator_id:
                 print(f"ResourceAllocator: 模拟器 '{intended_emulator_id}' (服务器 '{server_id}' 的目标) 当前不在线。")
-            # 如果没有配置 intended_emulator_id，或者 intended_emulator_id 不在线/繁忙，
-            # 可以选择一个当前不繁忙的任意在线模拟器 (这里为了简单，我们先强依赖 intended_emulator_id 的匹配)
-            # 若要更灵活，可以取消下面的注释块，并调整逻辑：
-            # else: # 服务器配置没有指定 intended_emulator_id，或指定的不满足条件
-            #     for online_emu_id in online_emulators:
-            #         if online_emu_id not in self._busy_emulator_ids:
-            #             self._busy_server_ids.add(server_id)
-            #             self._busy_emulator_ids.add(online_emu_id)
-            #             allocation = { ... 'emulator_id': online_emu_id, ...}
-            #             print(f"ResourceAllocator: 已分配服务器 '{server_id}' 给任意空闲模拟器 '{online_emu_id}'.")
-            #             return allocation
         
         print("ResourceAllocator: 未找到可用的 Appium 服务器和模拟器组合。")
         return None

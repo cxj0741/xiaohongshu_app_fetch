@@ -4,49 +4,66 @@ import re # 正则表达式模块，可选，用于更复杂的解析
 def get_online_emulator_ids():
     """
     获取当前所有处于 'device' 状态（即在线）的模拟器ID列表。
-    只返回以 'emulator-' 开头的设备ID。
+    增强了对IP:端口格式模拟器的识别。
     """
     try:
-        # 执行 'adb devices' 命令
-        # 'capture_output=True' 捕获命令的输出
-        # 'text=True' (或 Python 3.7+ 的 'encoding="utf-8"') 将输出解码为文本
-        # 'check=True' 如果命令返回非零退出码则抛出 CalledProcessError
         result = subprocess.run(
             ['adb', 'devices'], 
             capture_output=True, 
-            text=True, # 或者 encoding='utf-8'
+            text=True,
             check=True
         )
         
         online_emulators = []
+        seen_ips = set()  # 用于跟踪已经看到的IP地址
         output_lines = result.stdout.strip().splitlines()
         
-        # 解析输出：
-        # 示例输出:
-        # List of devices attached
-        # emulator-5554	device
-        # emulator-5556	device
-        # FA77P0300198	device  (这可能是一个真实设备)
+        print(f"ADB原始输出: {output_lines}")  # 添加调试输出
         
-        if len(output_lines) > 1: # 确保至少有一行设备信息
-            for line in output_lines[1:]: # 跳过第一行 "List of devices attached"
-                parts = line.strip().split('\t') # 按制表符分割
+        if len(output_lines) > 1:
+            for line in output_lines[1:]:
+                parts = line.strip().split('\t')
                 if len(parts) == 2 and parts[1] == 'device':
                     device_id = parts[0]
-                    if device_id.startswith('emulator-') or ':' in device_id: # 只选择模拟器
+                    
+                    # 对于IP:端口形式的设备ID，提取IP部分
+                    if ':' in device_id:
+                        ip_part = device_id.split(':')[0]
+                        # 确保同一IP的不同端口被视为不同设备
+                        if device_id not in seen_ips:
+                            online_emulators.append(device_id)
+                            seen_ips.add(device_id)
+                    elif device_id.startswith('emulator-'):
                         online_emulators.append(device_id)
-                        
-        return online_emulators
         
-    except FileNotFoundError:
-        print("错误: ADB 命令未找到。请确保 ADB 已安装并配置在系统 PATH 中。")
-        return []
-    except subprocess.CalledProcessError as e:
-        print(f"执行 'adb devices' 命令失败: {e}")
-        print(f"ADB stderr: {e.stderr}")
-        return []
+        # 添加详细日志
+        print(f"ADB Helper - 实际检测到的在线模拟器: {online_emulators}")
+        
+        # 验证每个模拟器是否真正可用
+        verified_emulators = []
+        for emu_id in online_emulators:
+            try:
+                # 尝试获取模拟器的一些基本信息，验证连接
+                verify_result = subprocess.run(
+                    ['adb', '-s', emu_id, 'shell', 'getprop', 'ro.product.model'],
+                    capture_output=True, text=True, timeout=3
+                )
+                if verify_result.returncode == 0:
+                    model = verify_result.stdout.strip()
+                    print(f"验证模拟器 {emu_id} 成功: 型号 = {model}")
+                    verified_emulators.append(emu_id)
+                else:
+                    print(f"警告: 模拟器 {emu_id} 验证失败: {verify_result.stderr}")
+            except Exception as e:
+                print(f"验证模拟器 {emu_id} 时出错: {e}")
+        
+        print(f"最终验证通过的模拟器: {verified_emulators}")
+        return verified_emulators
+        
     except Exception as e:
-        print(f"解析 ADB 输出时发生未知错误: {e}")
+        print(f"获取模拟器ID时出错: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 if __name__ == '__main__':

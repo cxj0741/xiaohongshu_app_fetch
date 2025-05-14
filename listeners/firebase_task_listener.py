@@ -103,11 +103,10 @@ def process_task(task_id, task_data, allocation_info, worker_name="DefaultWorker
         # 使用 AppiumDriverContextManager 和分配到的资源
         with AppiumDriverContextManager(
             server_url=allocation_info['appium_url'],
-            device_name=allocation_info['emulator_id'], # 必须
-            system_port=allocation_info.get('system_port'), # 从allocator获取
-            chromedriver_port=allocation_info.get('chromedriver_port') # 从allocator获取
-            # 确保您的 AppiumDriverContextManager 和 get_xiaohongshu_capabilities
-            # 已更新以接受和使用 system_port 及 chromedriver_port
+            device_name=allocation_info['emulator_id'], 
+            system_port=allocation_info.get('system_port'),
+            chromedriver_port=allocation_info.get('chromedriver_port'),
+            wda_local_port=allocation_info.get('wda_local_port')
         ) as driver:
             if not driver:
                 raise Exception("无法获取Appium驱动实例")

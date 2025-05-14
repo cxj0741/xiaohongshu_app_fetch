@@ -28,7 +28,8 @@ def get_xiaohongshu_capabilities(
     no_reset=None,  # 新增参数，允许覆盖全局的 APPIUM_NO_RESET_ENV
     new_command_timeout=None, # 新增参数，允许覆盖全局的 APPIUM_NEW_COMMAND_TIMEOUT_ENV
     system_port=None, # <<<< 新增参数
-    chromedriver_port=None # <<<< 新增参数
+    chromedriver_port=None, # <<<< 新增参数
+    wda_local_port=None  # 新增参数，支持wdaLocalPort
 ):
     """
     获取小红书应用的 Desired Capabilities。
@@ -69,5 +70,9 @@ def get_xiaohongshu_capabilities(
     # 如果函数参数中提供了 chromedriver_port，则添加到 capabilities 中
     if chromedriver_port is not None:
         caps["appium:chromedriverPort"] = int(chromedriver_port) # chromedriverPort 应为整数
+    
+    # 如果函数参数中提供了 wda_local_port，则添加到 capabilities 中
+    if wda_local_port is not None:
+        caps["appium:wdaLocalPort"] = int(wda_local_port) # wdaLocalPort 应为整数
         
     return UiAutomator2Options().load_capabilities(caps)
