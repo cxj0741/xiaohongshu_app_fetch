@@ -1,5 +1,9 @@
 import yaml # 用于读取 YAML 配置文件, 需要 pip install PyYAML
 import os
+import time
+import random
+import platform
+import subprocess
 from . import adb_helper # 从同一目录导入 adb_helper
 
 class ResourceAllocator:
@@ -30,7 +34,43 @@ class ResourceAllocator:
         # 使用集合 (set) 可以快速添加、删除和检查成员资格
         self._busy_server_ids = set()
         self._busy_emulator_ids = set()
+        
+        # 记录每个服务器上次分配的模拟器ID，用于调试
+        self._server_emulator_mapping = {}
+        
         print(f"ResourceAllocator 初始化完毕。已加载 {len(self.appium_servers_config)} 个 Appium 服务器配置。")
+
+    def verify_emulator_available(self, emulator_id):
+        """
+        验证模拟器是否真正可用
+        """
+        return adb_helper.verify_emulator_available(emulator_id)
+
+    def _try_cleanup_uiautomator(self, device_id):
+        """尝试清理可能崩溃的UiAutomator2服务"""
+        try:
+            print(f"尝试清理设备 {device_id} 上的UiAutomator服务...")
+            # 检测操作系统
+            is_windows = platform.system() == "Windows"
+            
+            # 停止服务
+            subprocess.run([
+                'adb', '-s', device_id, 'shell', 'am', 'force-stop', 'io.appium.uiautomator2.server'
+            ], shell=is_windows, timeout=5)
+            
+            # 清理服务
+            subprocess.run([
+                'adb', '-s', device_id, 'shell', 'pm', 'clear', 'io.appium.uiautomator2.server'
+            ], shell=is_windows, timeout=5)
+            
+            subprocess.run([
+                'adb', '-s', device_id, 'shell', 'pm', 'clear', 'io.appium.uiautomator2.server.test'
+            ], shell=is_windows, timeout=5)
+            
+            time.sleep(2)
+            print(f"UiAutomator服务清理完成")
+        except Exception as e:
+            print(f"清理UiAutomator服务时出错: {e}")
 
     def allocate_resource(self):
         """
@@ -43,11 +83,12 @@ class ResourceAllocator:
                 'emulator_id': '127.0.0.1:16384', 
                 'system_port': 8200, 
                 'chromedriver_port': 9515,
-                'wda_local_port': 8100,  # 添加这个字段
-                'appium_server_id': 'mumu_16384'
+                'wda_local_port': 8100,
+                'appium_server_id': 'server_1'
             }
             如果没有可用资源，则返回 None。
         """
+        # 获取在线模拟器列表
         online_emulators = adb_helper.get_online_emulator_ids()
         if not online_emulators:
             print("ResourceAllocator: 未检测到任何在线模拟器。")
@@ -56,38 +97,91 @@ class ResourceAllocator:
         print(f"ResourceAllocator: 检测到在线模拟器: {online_emulators}")
         print(f"ResourceAllocator: 当前繁忙的服务器ID: {self._busy_server_ids}")
         print(f"ResourceAllocator: 当前繁忙的模拟器ID: {self._busy_emulator_ids}")
+        print(f"ResourceAllocator: 服务器-模拟器映射: {self._server_emulator_mapping}")
 
+        # 随机打乱服务器配置顺序，避免总是分配同一个服务器
+        shuffled_servers = list(self.appium_servers_config)
+        random.shuffle(shuffled_servers)
+
+        # 创建一个映射，记录每个模拟器被哪些服务器指定
+        emulator_to_servers = {}
+        for emu_id in online_emulators:
+            emulator_to_servers[emu_id] = []
+            
+        # 找出每个在线模拟器被哪些服务器指定
         for server_conf in self.appium_servers_config:
+            server_id = server_conf.get('id')
+            intended_emu_id = server_conf.get('intended_emulator_id')
+            
+            if intended_emu_id in online_emulators:
+                emulator_to_servers[intended_emu_id].append(server_id)
+        
+        print(f"ResourceAllocator: 模拟器与服务器对应关系: {emulator_to_servers}")
+
+        # 遍历服务器配置进行分配
+        for server_conf in shuffled_servers:
             server_id = server_conf.get('id')
             appium_url = server_conf.get('url')
             intended_emulator_id = server_conf.get('intended_emulator_id')
 
-            # 1. 检查此 Appium 服务器是否空闲
+            # 1. 跳过已繁忙的服务器
             if server_id in self._busy_server_ids:
                 print(f"ResourceAllocator: 服务器 '{server_id}' 当前繁忙，跳过。")
                 continue
 
-            # 2. 检查此服务器期望的模拟器是否在线且空闲
+            # 2. 尝试分配指定的模拟器
+            target_emulator = None
+            
+            # 先尝试服务器的预期模拟器
             if intended_emulator_id and intended_emulator_id in online_emulators:
                 if intended_emulator_id not in self._busy_emulator_ids:
-                    # 找到了一个与服务器配置中 intended_emulator_id 匹配的、在线且空闲的模拟器
-                    self._busy_server_ids.add(server_id)
-                    self._busy_emulator_ids.add(intended_emulator_id)
-                    
-                    allocation = {
-                        'appium_url': appium_url,
-                        'emulator_id': intended_emulator_id,
-                        'system_port': server_conf.get('system_port'),
-                        'chromedriver_port': server_conf.get('chromedriver_port'),
-                        'wda_local_port': server_conf.get('wda_local_port'),  # 添加这一行
-                        'appium_server_id': server_id
-                    }
-                    print(f"ResourceAllocator: 已分配服务器 '{server_id}' 给模拟器 '{intended_emulator_id}'.")
-                    return allocation
+                    # 验证模拟器是否真正可用
+                    if self.verify_emulator_available(intended_emulator_id):
+                        target_emulator = intended_emulator_id
+                        print(f"ResourceAllocator: 服务器 '{server_id}' 使用其指定的模拟器 '{target_emulator}'。")
+                    else:
+                        print(f"ResourceAllocator: 服务器 '{server_id}' 的指定模拟器 '{intended_emulator_id}' 验证失败，尝试其他可用模拟器.")
                 else:
                     print(f"ResourceAllocator: 模拟器 '{intended_emulator_id}' (服务器 '{server_id}' 的目标) 当前繁忙。")
             elif intended_emulator_id:
                 print(f"ResourceAllocator: 模拟器 '{intended_emulator_id}' (服务器 '{server_id}' 的目标) 当前不在线。")
+                
+                # 如果指定的模拟器不在线，尝试分配任意空闲模拟器
+                for emu_id in online_emulators:
+                    if emu_id not in self._busy_emulator_ids and self.verify_emulator_available(emu_id):
+                        target_emulator = emu_id
+                        print(f"ResourceAllocator: 服务器 '{server_id}' 的指定模拟器不在线，使用替代模拟器 '{target_emulator}'。")
+                        break
+            else:
+                # 服务器没有指定模拟器，尝试分配任意空闲模拟器
+                for emu_id in online_emulators:
+                    if emu_id not in self._busy_emulator_ids and self.verify_emulator_available(emu_id):
+                        target_emulator = emu_id
+                        print(f"ResourceAllocator: 服务器 '{server_id}' 没有指定模拟器，使用可用模拟器 '{target_emulator}'。")
+                        break
+                
+            # 如果找到了可用模拟器，完成分配
+            if target_emulator:
+                # 清理UiAutomator2服务
+                self._try_cleanup_uiautomator(target_emulator)
+                
+                # 标记资源为繁忙
+                self._busy_server_ids.add(server_id)
+                self._busy_emulator_ids.add(target_emulator)
+                
+                # 记录服务器-模拟器映射
+                self._server_emulator_mapping[server_id] = target_emulator
+                
+                allocation = {
+                    'appium_url': appium_url,
+                    'emulator_id': target_emulator,
+                    'system_port': server_conf.get('system_port'),
+                    'chromedriver_port': server_conf.get('chromedriver_port'),
+                    'wda_local_port': server_conf.get('wda_local_port'),
+                    'appium_server_id': server_id
+                }
+                print(f"ResourceAllocator: 已分配服务器 '{server_id}' 给模拟器 '{target_emulator}'.")
+                return allocation
         
         print("ResourceAllocator: 未找到可用的 Appium 服务器和模拟器组合。")
         return None
@@ -106,6 +200,9 @@ class ResourceAllocator:
 
         if server_id_to_release in self._busy_server_ids:
             self._busy_server_ids.remove(server_id_to_release)
+            # 清理服务器-模拟器映射
+            if server_id_to_release in self._server_emulator_mapping:
+                del self._server_emulator_mapping[server_id_to_release]
             print(f"ResourceAllocator: Appium 服务器 '{server_id_to_release}' 已释放。")
         else:
             print(f"ResourceAllocator: 警告 - 尝试释放一个未标记为繁忙的服务器 '{server_id_to_release}'。")
@@ -118,19 +215,8 @@ class ResourceAllocator:
 
 # --- 用于直接运行此文件进行测试 ---
 if __name__ == '__main__':
-    print("测试 ResourceAllocator (请确保 config/appium_instances_config.yaml 文件存在且配置正确，并有模拟器在运行):")
+    print("测试 ResourceAllocator:")
     
-    # 假设您的项目结构是:
-    # project_root/
-    #  config/
-    #    appium_instances_config.yaml
-    #  execution_manager/
-    #    resource_allocator.py
-    #    adb_helper.py
-    # 如果直接运行 resource_allocator.py，它可能无法正确找到位于父目录的 config 文件夹。
-    # 在实际的测试运行器中，路径问题会更容易处理。
-    # 为了直接测试，您可能需要调整 config_file_path 的默认值，或在创建实例时传入绝对路径。
-    # 例如，可以这样调整测试代码：
     try:
         # 获取当前脚本的父目录 (execution_manager)
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -155,30 +241,23 @@ if __name__ == '__main__':
         else:
             print("第二次分配失败。")
             
-        print("\n--- 第三次分配 ---") # 假设您配置了至少3个服务器/或期望第三次分配失败
-        res3 = allocator.allocate_resource()
-        if res3:
-            print(f"分配结果3: {res3}")
-        else:
-            print("第三次分配失败。")
-
-        print("\n--- 释放资源1 ---")
         if res1:
+            print("\n--- 释放第一个资源 ---")
             allocator.release_resource(res1)
             
-        print("\n--- 再次尝试分配 (释放 res1 后) ---")
-        res_after_release = allocator.allocate_resource()
-        if res_after_release:
-            print(f"再次分配结果: {res_after_release}")
-            print("\n--- 释放所有已分配资源 (res2, res3, res_after_release) ---")
-            if res2: allocator.release_resource(res2)
-            if res3: allocator.release_resource(res3) # 即使 res3 为 None, 也不会出错
-            allocator.release_resource(res_after_release)
-        else:
-            print("释放 res1 后再次分配失败。")
-            print("\n--- 释放剩余已分配资源 (res2, res3) ---")
-            if res2: allocator.release_resource(res2)
-            if res3: allocator.release_resource(res3)
+            print("\n--- 重新分配一次 ---")
+            res3 = allocator.allocate_resource()
+            if res3:
+                print(f"重新分配结果: {res3}")
+                allocator.release_resource(res3)
+            else:
+                print("重新分配失败。")
+        
+        if res2:
+            print("\n--- 释放第二个资源 ---")
+            allocator.release_resource(res2)
             
     except Exception as main_e:
-        print(f"测试过程中发生主错误: {main_e}")
+        print(f"测试过程中发生错误: {main_e}")
+        import traceback
+        traceback.print_exc()

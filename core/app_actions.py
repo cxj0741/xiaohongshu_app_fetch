@@ -4,6 +4,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import time
+import subprocess
+from selenium.webdriver.common.action_chains import ActionChains
 
 def is_on_homepage(driver, timeout=1):
     """
@@ -128,27 +130,71 @@ def perform_search(driver, keyword, timeout=10):
 
         time.sleep(1.5)
         
-        # 2. 输入关键词（使用替代方法）
-        print(f"输入关键词 '{keyword}' (因输入框已自动聚焦)...")
-        # 替代方法1: 使用driver的send_keys方法
-        # 尝试找到搜索输入框
+        # 2. 输入关键词（使用多种方法尝试）
+        print(f"输入关键词 '{keyword}'...")
+        
+        # 方法1: 尝试使用查找并点击输入框，然后输入文本
         try:
             search_box = WebDriverWait(driver, 3).until(
                 EC.element_to_be_clickable((AppiumBy.CLASS_NAME, "android.widget.EditText"))
             )
+            # 确保输入框处于聚焦状态
+            search_box.click()
+            time.sleep(0.5)
+            # 清除已有内容
+            search_box.clear()
+            time.sleep(0.5)
+            # 输入新内容
             search_box.send_keys(keyword)
-        except:
-            # 如果找不到输入框，尝试使用driver的keyboard方法
-            # 这依赖于输入框已被聚焦
-            driver.keyboard.send_keys(keyword)
+            print("方法1：已通过直接查找输入框并设置文本值")
+        except Exception as e1:
+            print(f"方法1失败: {e1}")
             
-        print("关键词输入完毕。")
+            # 方法2: 尝试使用ADB输入文本
+            try:
+                # 使用ADB直接发送文本
+                cmd = f"adb -s {driver.capabilities['deviceName']} shell input text \"{keyword}\""
+                print(f"尝试执行ADB命令: {cmd}")
+                subprocess.run(cmd, shell=True, check=True)
+                print("方法2：已通过ADB命令输入文本")
+            except Exception as e2:
+                print(f"方法2失败: {e2}")
+                
+                # 方法3: 回退到最简单的方式，直接用Actions发送按键
+                try:
+                    # 先尝试定位搜索框
+                    search_boxes = driver.find_elements(AppiumBy.CLASS_NAME, "android.widget.EditText")
+                    if search_boxes:
+                        search_boxes[0].send_keys(keyword)
+                        print("方法3：已通过元素列表找到输入框并输入文本")
+                    else:
+                        # 如果找不到搜索框，尝试直接发送按键
+                        actions = ActionChains(driver)
+                        actions.send_keys(keyword)
+                        actions.perform()
+                        print("方法3：已通过ActionChains直接发送按键")
+                except Exception as e3:
+                    print(f"所有输入方法均失败: {e3}")
+                    return False
 
         # 3. 按回车键提交（保持不变）
         print("按回车键提交搜索...")
-        driver.press_keycode(66)  # 66是Android中的ENTER键码
-        print("已按回车键，搜索已提交。")
+        try:
+            driver.press_keycode(66)  # 66是Android中的ENTER键码
+            print("已按回车键，搜索已提交。")
+        except Exception as e:
+            print(f"按回车键失败: {e}")
+            # 尝试通过ADB发送回车键
+            try:
+                cmd = f"adb -s {driver.capabilities['deviceName']} shell input keyevent 66"
+                subprocess.run(cmd, shell=True, check=True)
+                print("已通过ADB发送回车键")
+            except Exception as e_adb:
+                print(f"通过ADB发送回车键失败: {e_adb}")
+                return False
         
+        # 等待搜索结果加载
+        time.sleep(2)
         return True
         
     except Exception as e:

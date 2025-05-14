@@ -3,8 +3,11 @@ from firebase_admin import credentials, firestore
 import time
 import threading
 import os
-import queue # Python 内置的线程安全队列
+import queue
+import random
+import subprocess
 # from threading import Semaphore # 不再需要 Semaphore(1)
+from datetime import datetime, timedelta
 
 # --- 您的模块导入 ---
 # 确保这些路径根据您的项目结构是正确的
@@ -30,6 +33,11 @@ try:
     # 则 project_root 是此脚本所在文件夹的父目录
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # 项目根目录
     APPIUM_INSTANCES_CONFIG_PATH = os.path.join(PROJECT_ROOT, 'config', 'appium_instances_config.yaml')
+    
+    # 新增配置：任务处理失败后重试的等待时间（秒）
+    RETRY_DELAY_SECONDS = 30
+    # 新增配置：重试前清理UiAutomator2服务
+    CLEAN_UIAUTOMATOR2_ON_RETRY = True
 
 except Exception as e:
     print(f"配置错误: {e}")
@@ -42,9 +50,13 @@ ALLOCATOR = None # 全局 ResourceAllocator 实例
 _query_watch = None # Firestore 监听器引用
 worker_threads_list = [] # 存储工作线程对象
 stop_event = threading.Event() # 用于优雅地停止所有工作线程
+# 新增：任务重试计数器，用于避免无限重试
+task_retry_counts = {}
+# 新增：服务器健康状态跟踪
+server_health_status = {}
 
 def initialize_app_services():
-    global db, ALLOCATOR
+    global db, ALLOCATOR, server_health_status
     print("正在初始化 Firebase Admin SDK...")
     try:
         cred = credentials.Certificate(SERVICE_ACCOUNT_KEY_PATH)
@@ -61,27 +73,60 @@ def initialize_app_services():
         ALLOCATOR = ResourceAllocator(config_file_path=APPIUM_INSTANCES_CONFIG_PATH)
         if not ALLOCATOR.appium_servers_config:
             print("警告: ResourceAllocator未能加载有效的Appium服务器配置。Appium相关任务可能无法处理。")
-            # 根据您的需求，这里可以选择是否因为这个警告而退出程序
         else:
             print(f"ResourceAllocator 初始化成功，加载了 {len(ALLOCATOR.appium_servers_config)} 个服务器配置。")
+            # 初始化服务器健康状态
+            for server_conf in ALLOCATOR.appium_servers_config:
+                server_id = server_conf.get('id')
+                if server_id:
+                    server_health_status[server_id] = {
+                        'last_success': None,
+                        'failures': 0,
+                        'status': 'unknown'
+                    }
     except Exception as e:
         print(f"ResourceAllocator 初始化失败: {e}")
         return False
         
     return True
 
+def clean_uiautomator2_service(emulator_id):
+    """清理设备上可能导致问题的UiAutomator2服务"""
+    try:
+        print(f"清理设备 {emulator_id} 上的UiAutomator2服务...")
+        subprocess.run([
+            'adb', '-s', emulator_id, 'shell', 'pm', 'clear', 'io.appium.uiautomator2.server'
+        ], timeout=5)
+        subprocess.run([
+            'adb', '-s', emulator_id, 'shell', 'pm', 'clear', 'io.appium.uiautomator2.server.test'
+        ], timeout=5)
+        
+        # 尝试杀死可能仍在运行的UiAutomator进程
+        subprocess.run([
+            'adb', '-s', emulator_id, 'shell', 'ps | grep uiautomator | awk \'{print $2}\' | xargs kill -9'
+        ], shell=True, timeout=5)
+        
+        time.sleep(2)
+        print(f"UiAutomator服务清理完成")
+        return True
+    except Exception as e:
+        print(f"清理UiAutomator服务时出错: {e}")
+        return False
+
 def process_task(task_id, task_data, allocation_info, worker_name="DefaultWorker"):
     """
     处理单个任务的函数，现在接收 allocation_info。
+    已增强错误处理和状态跟踪。
     """
-    global db
+    global db, server_health_status
     if not db:
         print(f"[{worker_name}][{allocation_info.get('emulator_id', 'N/A')}][{task_id}] Firestore客户端未初始化。")
-        return
+        return False
 
     action = task_data.get('actions')
     parameters = task_data.get('parameters', {})
     emulator_id_log = allocation_info.get('emulator_id', 'N/A')
+    server_id = allocation_info.get('appium_server_id')
     
     print(f"[{worker_name}][{emulator_id_log}][{task_id}] 开始处理任务: Action='{action}', Parameters='{parameters}'")
 
@@ -96,8 +141,6 @@ def process_task(task_id, task_data, allocation_info, worker_name="DefaultWorker
         })
     except Exception as firestore_update_error:
         print(f"[{worker_name}][{emulator_id_log}][{task_id}] 更新Firestore状态为 'processing' 时失败: {firestore_update_error}")
-        # 决定是否继续处理任务或直接返回
-        # return 
 
     try:
         # 使用 AppiumDriverContextManager 和分配到的资源
@@ -130,12 +173,21 @@ def process_task(task_id, task_data, allocation_info, worker_name="DefaultWorker
             else:
                 raise ValueError(f"未知的 action: '{action}'")
 
+        # 更新任务状态为完成
         db.collection(TASKS_COLLECTION_NAME).document(task_id).update({
             'status': 'completed',
-            'result': result, # 确保 result 是 Firestore 兼容的类型
+            'result': result,
             'updatedAt': firestore.SERVER_TIMESTAMP
         })
         print(f"[{worker_name}][{emulator_id_log}][{task_id}] 任务处理成功！")
+        
+        # 更新服务器健康状态
+        if server_id in server_health_status:
+            server_health_status[server_id]['last_success'] = datetime.now()
+            server_health_status[server_id]['failures'] = 0
+            server_health_status[server_id]['status'] = 'healthy'
+        
+        return True
 
     except Exception as e:
         error_message = f"任务处理失败: {type(e).__name__} - {str(e)}"
@@ -143,17 +195,28 @@ def process_task(task_id, task_data, allocation_info, worker_name="DefaultWorker
         import traceback
         traceback.print_exc()
         
+        # 更新服务器健康状态，记录失败
+        if server_id in server_health_status:
+            server_health_status[server_id]['failures'] += 1
+            if server_health_status[server_id]['failures'] >= 3:
+                server_health_status[server_id]['status'] = 'unhealthy'
+            else:
+                server_health_status[server_id]['status'] = 'warning'
+        
+        # 更新任务状态为失败
         db.collection(TASKS_COLLECTION_NAME).document(task_id).update({
             'status': 'failed',
             'error': error_message,
             'updatedAt': firestore.SERVER_TIMESTAMP
         })
+        return False
 
 def appium_task_processor_loop(worker_name):
     """
     每个工作线程运行这个循环，获取任务、分配Appium资源、处理任务、释放资源。
+    增强了错误恢复和健康检查机制。
     """
-    global task_queue, ALLOCATOR, stop_event
+    global task_queue, ALLOCATOR, stop_event, task_retry_counts, server_health_status
     print(f"[{worker_name}] 工作单元已启动，等待任务...")
 
     while not stop_event.is_set():
@@ -164,11 +227,24 @@ def appium_task_processor_loop(worker_name):
             # 1. 从任务队列获取任务
             try:
                 task_id, task_data = task_queue.get(timeout=1) # 使用超时以便能周期性检查 stop_event
-                task_info = {"id": task_id} # 存储 task_id 用于 finally
+                task_info = {"id": task_id, "data": task_data} # 存储任务信息用于 finally
             except queue.Empty:
                 continue # 队列为空，继续循环检查 stop_event
 
             print(f"[{worker_name}] 从队列获取到任务: {task_id}")
+            
+            # 检查任务重试次数
+            retry_count = task_retry_counts.get(task_id, 0)
+            if retry_count >= 3:  # 最多重试3次
+                print(f"[{worker_name}][{task_id}] 任务已重试{retry_count}次，放弃处理")
+                db.collection(TASKS_COLLECTION_NAME).document(task_id).update({
+                    'status': 'abandoned',
+                    'error': f'超过最大重试次数(3次)',
+                    'updatedAt': firestore.SERVER_TIMESTAMP
+                })
+                task_retry_counts.pop(task_id, None)  # 从重试计数器中移除
+                task_queue.task_done()
+                continue
 
             # 2. 尝试分配 Appium 资源
             print(f"[{worker_name}][{task_id}] 尝试分配 Appium 资源...")
@@ -178,11 +254,30 @@ def appium_task_processor_loop(worker_name):
             max_retries = 2 # 例如，最多重试2次 (总共3次尝试)
             retry_delay = 5 # 秒
             
+            # 如果该任务已经失败过，在重试前清理UiAutomator2服务
+            if CLEAN_UIAUTOMATOR2_ON_RETRY and task_id in task_retry_counts and task_retry_counts[task_id] > 0:
+                # 尝试获取任何可用的设备进行清理
+                print(f"[{worker_name}][{task_id}] 任务已重试{task_retry_counts[task_id]}次，尝试清理所有模拟器上的UiAutomator2服务")
+                online_emulators = adb_helper.get_online_emulator_ids()
+                if online_emulators:
+                    for emulator_id in online_emulators:
+                        if emulator_id not in ALLOCATOR._busy_emulator_ids:
+                            clean_uiautomator2_service(emulator_id)
+            
             while retry_count <= max_retries and not stop_event.is_set():
+                # 尝试分配资源，但避免分配已知不健康的服务器
                 allocation_info = ALLOCATOR.allocate_resource()
+                
+                # 如果成功分配，但服务器状态为不健康，可能需要额外验证或清理
                 if allocation_info:
+                    server_id = allocation_info.get('appium_server_id')
+                    if server_id in server_health_status and server_health_status[server_id]['status'] == 'unhealthy':
+                        print(f"[{worker_name}][{task_id}] 警告：分配到了标记为不健康的服务器 {server_id}，尝试额外清理")
+                        clean_uiautomator2_service(allocation_info.get('emulator_id'))
+                    
                     print(f"[{worker_name}][{task_id}] Appium 资源已分配: {allocation_info.get('emulator_id')}")
                     break
+                
                 retry_count += 1
                 if retry_count <= max_retries:
                     print(f"[{worker_name}][{task_id}] 第 {retry_count} 次分配资源失败，将在 {retry_delay} 秒后重试...")
@@ -195,18 +290,42 @@ def appium_task_processor_loop(worker_name):
             if stop_event.is_set(): # 如果在分配过程中收到停止信号
                 print(f"[{worker_name}][{task_id}] 分配资源时收到停止信号，将任务放回队列。")
                 task_queue.put((task_id, task_data)) # 将任务放回队列
-                # task_queue.task_done() # 标记此 get 操作完成
                 break # 跳出主 while 循环，结束线程
 
             if not allocation_info:
                 print(f"[{worker_name}][{task_id}] 多次尝试后仍无法分配Appium资源，将任务放回队列等待后续处理。")
+                # 延迟一段时间后重试
+                time.sleep(5)  # 短暂延迟避免立即重新加入队列
                 task_queue.put((task_id, task_data))
-                # task_queue.task_done()
                 time.sleep(10) # 让此 worker 稍作等待，避免立即再次抢占任务
+                task_queue.task_done()
                 continue # 继续下一个循环尝试获取任务
 
             # 3. 如果资源分配成功，则处理任务
-            process_task(task_id, task_data, allocation_info, worker_name)
+            task_success = process_task(task_id, task_data, allocation_info, worker_name)
+            
+            # 任务处理失败，更新重试计数并可能重新排队
+            if not task_success:
+                # 更新重试计数
+                current_retry_count = task_retry_counts.get(task_id, 0)
+                task_retry_counts[task_id] = current_retry_count + 1
+                
+                if task_retry_counts[task_id] < 3:  # 如果未达到最大重试次数
+                    print(f"[{worker_name}][{task_id}] 任务处理失败，这是第{task_retry_counts[task_id]}次失败，将在{RETRY_DELAY_SECONDS}秒后重试")
+                    # 给系统一些时间来恢复，避免立即重试
+                    time.sleep(RETRY_DELAY_SECONDS)
+                    # 将任务重新放入队列
+                    task_queue.put((task_id, task_data))
+                else:
+                    print(f"[{worker_name}][{task_id}] 任务已失败{task_retry_counts[task_id]}次，不再重试")
+                    # 更新为最终失败状态
+                    db.collection(TASKS_COLLECTION_NAME).document(task_id).update({
+                        'status': 'abandoned',
+                        'error': f'任务失败并超过最大重试次数(3次)',
+                        'updatedAt': firestore.SERVER_TIMESTAMP
+                    })
+                    # 从重试计数中移除
+                    task_retry_counts.pop(task_id, None)
 
         except Exception as loop_error: # 捕获工作单元循环中的意外错误
             print(f"[{worker_name}] 工作单元主循环发生严重错误: {loop_error}")
@@ -214,8 +333,9 @@ def appium_task_processor_loop(worker_name):
             traceback.print_exc()
             # 根据错误性质，可能需要将任务放回队列或标记为特殊失败状态
             if task_info: # 如果已经取到 task_id
-                 # db.collection(TASKS_COLLECTION_NAME).document(task_info["id"]).update({'status': 'error_worker_fault'})
-                 print(f"[{worker_name}] 任务 {task_info['id']} 可能因工作单元故障而中断。")
+                 print(f"[{worker_name}] 任务 {task_info['id']} 可能因工作单元故障而中断，将重新放入队列")
+                 # 将任务放回队列
+                 task_queue.put((task_info['id'], task_info['data']))
         finally:
             # 4. 确保释放 Appium 资源
             if allocation_info:
@@ -223,7 +343,7 @@ def appium_task_processor_loop(worker_name):
                 print(f"[{worker_name}][{log_task_id}] 准备释放Appium资源: {allocation_info.get('emulator_id')}")
                 ALLOCATOR.release_resource(allocation_info)
             
-            if task_info: # 如果从队列中获取了任务，则必须调用 task_done
+            if task_info and not ('data' in task_info): # 如果任务已处理完或已重新入队
                 task_queue.task_done()
     
     print(f"[{worker_name}] 工作单元检测到停止信号，正在退出...")
