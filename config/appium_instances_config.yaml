@@ -9,7 +9,7 @@ appium_servers:
     url: "http://127.0.0.1:4725" # 您启动的第二个 Appium 服务器的 URL
     system_port: 8201            # 与 server2_caps.json 中定义的 systemPort 一致
     chromedriver_port: 9516      # 与 server2_caps.json 中定义的 chromedriverPort 一致
-    intended_emulator_id: "127.0.0.1:16416"
+    intended_emulator_id: "127.0.0.1:16448"
 
   # - id: "server_3"
   #   url: "http://127.0.0.1:4727" # 您启动的第三个 Appium 服务器的 URL

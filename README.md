@@ -128,7 +128,7 @@ pip install -r requirements.txt
 3.  **启动 Firebase 任务监听器**:
     在项目根目录下，打开一个新的终端窗口（已激活虚拟环境），运行：
     ```bash
-    python listeners/firebase_task_listener.py
+    python -m listeners.firebase_task_listener
     ```
     你应该会看到类似 "正在监听 Firestore..." 的日志。
 
