@@ -10,7 +10,7 @@
     "appium:ensureWebviewsHavePages": true,
     "appium:nativeWebScreenshot": true,
     "appium:newCommandTimeout": 3600,
-    "appium:skipServerInstallation": false,
+    "appium:skipServerInstallation": true,
     "appium:dontStopAppOnReset": true,
     "appium:fullReset": false,
     "appium:adbExecTimeout": 60000,
@@ -18,7 +18,7 @@
     "appium:uiautomator2ServerLaunchTimeout": 60000,
     "appium:systemPort": 8200,
     "appium:chromedriverPort": 9515,
-    "appium:adbHost": "host.docker.internal",
-    "appium:adbPort": 5037
-  }
-  
+    "appium:adbHost": "127.0.0.1",
+    "appium:adbPort": 5037,
+    "appium:ignoreHiddenApiPolicyError": true
+}

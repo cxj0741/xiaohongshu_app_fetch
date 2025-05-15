@@ -5,6 +5,7 @@ services:
   mitmproxy:
     image: mitmproxy/mitmproxy
     container_name: mitmproxy_service_main
+    network_mode: host
     ports:
       - "8080:8080" # Mitmproxy 代理端口
       # - "8081:8081" # 如果需要 mitmweb 界面，取消注释此行
@@ -20,8 +21,6 @@ services:
       --set block_global=false
       --set flow_detail=0
     restart: unless-stopped
-    networks:
-      - automation_suite_net
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -31,6 +30,7 @@ services:
       context: ./uploader_service
       dockerfile: Dockerfile
     container_name: uploader_service_main
+    network_mode: host
     env_file:
       - ./.env
     volumes:
@@ -39,8 +39,6 @@ services:
     depends_on:
       - mitmproxy
     restart: unless-stopped
-    networks:
-      - automation_suite_net
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -48,22 +46,19 @@ services:
   appium_server1:
     image: appium/appium
     container_name: appium_server1_main
-    ports:
-      - "4723:4723"
+    network_mode: host
     volumes:
       - ./appium_configs/server1_caps.json:/app/server1_caps.json:ro
       - ./appium_logs/appium_server1.log:/app/appium_server1.log
     environment:
-      - ANDROID_ADB_SERVER_ADDRESS=host.docker.internal
+      - ANDROID_ADB_SERVER_ADDRESS=127.0.0.1
       - ANDROID_ADB_SERVER_PORT=5037
     command: >
       appium server --port 4723 --address 0.0.0.0
       --default-capabilities /app/server1_caps.json
       --use-drivers uiautomator2 --log /app/appium_server1.log --log-level debug
-      --allow-insecure adb_shell
+      --relaxed-security --allow-insecure adb_shell,chromedriver_autodownload
     restart: unless-stopped
-    networks:
-      - automation_suite_net
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -71,22 +66,19 @@ services:
   appium_server2:
     image: appium/appium
     container_name: appium_server2_main
-    ports:
-      - "4725:4725"
+    network_mode: host
     volumes:
       - ./appium_configs/server2_caps.json:/app/server2_caps.json:ro
       - ./appium_logs/appium_server2.log:/app/appium_server2.log
     environment:
-      - ANDROID_ADB_SERVER_ADDRESS=host.docker.internal
+      - ANDROID_ADB_SERVER_ADDRESS=127.0.0.1
       - ANDROID_ADB_SERVER_PORT=5037
     command: >
       appium server --port 4725 --address 0.0.0.0
       --default-capabilities /app/server2_caps.json
       --use-drivers uiautomator2 --log /app/appium_server2.log --log-level debug
-      --allow-insecure adb_shell
+      --relaxed-security --allow-insecure adb_shell,chromedriver_autodownload
     restart: unless-stopped
-    networks:
-      - automation_suite_net
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -94,22 +86,19 @@ services:
   appium_server3:
     image: appium/appium
     container_name: appium_server3_main
-    ports:
-      - "4727:4727"
+    network_mode: host
     volumes:
       - ./appium_configs/server3_caps.json:/app/server3_caps.json:ro
       - ./appium_logs/appium_server3.log:/app/appium_server3.log
     environment:
-      - ANDROID_ADB_SERVER_ADDRESS=host.docker.internal
+      - ANDROID_ADB_SERVER_ADDRESS=127.0.0.1
       - ANDROID_ADB_SERVER_PORT=5037
     command: >
       appium server --port 4727 --address 0.0.0.0
       --default-capabilities /app/server3_caps.json
       --use-drivers uiautomator2 --log /app/appium_server3.log --log-level debug
-      --allow-insecure adb_shell
+      --relaxed-security --allow-insecure adb_shell,chromedriver_autodownload
     restart: unless-stopped
-    networks:
-      - automation_suite_net
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -119,11 +108,14 @@ services:
       context: . # Dockerfile 位于当前目录 (项目根目录)
       dockerfile: Dockerfile
     container_name: firebase_listener_main
+    network_mode: host
     env_file:
       - ./.env
     environment:
       - IS_IN_DOCKER_CONTAINER=true
       - PYTHONUNBUFFERED=1
+      - ANDROID_ADB_SERVER_ADDRESS=127.0.0.1
+      - ANDROID_ADB_SERVER_PORT=5037
     volumes:
       - ./logs:/app/logs
     depends_on:
@@ -131,11 +123,10 @@ services:
       - appium_server2
       - appium_server3
     restart: unless-stopped
-    networks:
-      - automation_suite_net
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+# 保留network定义，因为mitmproxy和uploader服务仍然使用它
 networks:
   automation_suite_net:
     driver: bridge

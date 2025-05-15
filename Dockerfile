@@ -4,7 +4,7 @@ FROM python:3.11-slim
 # 设置环境变量
 ENV PYTHONUNBUFFERED=1 \
     # 下面这两个环境变量会让容器内的 adb 客户端尝试连接到主机的 ADB 服务
-    ANDROID_ADB_SERVER_ADDRESS=host.docker.internal \
+    ANDROID_ADB_SERVER_ADDRESS=172.17.0.1 \
     ANDROID_ADB_SERVER_PORT=5037 \
     # 这个环境变量用于在 Python 脚本中判断是否在 Docker 环境运行
     IS_IN_DOCKER_CONTAINER=true

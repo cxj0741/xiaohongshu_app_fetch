@@ -40,6 +40,14 @@ class ResourceAllocator:
         
         print(f"ResourceAllocator 初始化完毕。已加载 {len(self.appium_servers_config)} 个 Appium 服务器配置。")
 
+        # 添加配置检查
+        if adb_helper.IS_DOCKER_ENVIRONMENT:
+            # 检查环境变量是否正确
+            adb_host = os.environ.get('ANDROID_ADB_SERVER_ADDRESS')
+            if adb_host == 'host-gateway':
+                print("警告: 环境变量 ANDROID_ADB_SERVER_ADDRESS=host-gateway 可能导致问题")
+                print("建议使用 ANDROID_ADB_SERVER_ADDRESS=172.17.0.1 或主机实际IP")
+
     def verify_emulator_available(self, emulator_id):
         """
         验证模拟器是否真正可用
@@ -56,7 +64,7 @@ class ResourceAllocator:
             # 停止服务
             subprocess.run([
                 'adb', '-s', device_id, 'shell', 'am', 'force-stop', 'io.appium.uiautomator2.server'
-            ], shell=is_windows, timeout=5)
+            ], shell=is_windows, timeout=15)
             
             # 清理服务
             subprocess.run([

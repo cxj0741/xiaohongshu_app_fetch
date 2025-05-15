@@ -44,10 +44,10 @@ class AppiumDriverContextManager:
             print(f"尝试清理设备 {device_id} 上的UiAutomator服务...")
             subprocess.run([
                 'adb', '-s', device_id, 'shell', 'pm', 'clear', 'io.appium.uiautomator2.server'
-            ], timeout=5)
+            ], timeout=30)
             subprocess.run([
                 'adb', '-s', device_id, 'shell', 'pm', 'clear', 'io.appium.uiautomator2.server.test'
-            ], timeout=5)
+            ], timeout=30)
             time.sleep(2)
             print(f"UiAutomator服务清理完成")
         except Exception as e:
@@ -66,7 +66,7 @@ class AppiumDriverContextManager:
             
             # 添加UiAutomator2服务重置选项，保证稳定性（注意：移除'appium:'前缀）
             stability_options = {
-                "skipServerInstallation": False,  # 强制重新安装UiAutomator2服务
+                "skipServerInstallation": True,  # 使用已安装的UiAutomator2服务，不重新安装
                 "dontStopAppOnReset": True,      # 不停止应用
                 "fullReset": False,              # 不完全重置应用
                 "adbExecTimeout": 60000,         # 增加ADB超时时间

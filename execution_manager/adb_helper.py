@@ -5,6 +5,7 @@ import time
 import platform
 import os
 from pathlib import Path
+import socket
 
 # 检查是否在 Docker 容器中运行
 # 这个环境变量需要在 docker-compose.yml 中为 firebase_listener 服务设置
@@ -30,7 +31,7 @@ def ensure_mumu_connected():
         print("请确保模拟器已在主机端通过 ADB 连接，并且 Appium capabilities 正确配置了 adbHost 和 udid。")
         # 在 Docker 环境中，我们假设 ADB 连接由外部管理（主机ADB + Appium的adbHost能力）
         # 或者容器内的 ADB 命令会通过环境变量指向主机 ADB 服务
-        return True # 返回 True，表示“已处理”或“无需处理”
+        return True # 返回 True，表示"已处理"或"无需处理"
 
     if MuMuConnector is None:
         print("警告: MuMuConnector 未导入，无法执行自动连接，跳过。")
@@ -57,6 +58,55 @@ def ensure_mumu_connected():
         print(f"使用 MuMuConnector 自动连接MuMu模拟器时出错: {e}")
         return False
 
+def restart_adb_server_and_connect_emulator():
+    """重启ADB服务器并直接连接到模拟器"""
+    try:
+        print("尝试重启ADB服务器并连接模拟器...")
+        
+        # 1. 先杀掉ADB服务器
+        subprocess.run(['adb', 'kill-server'], timeout=10)
+        time.sleep(2)
+        
+        # 2. 设置环境变量，确保使用正确的IP地址
+        os.environ['ANDROID_ADB_SERVER_ADDRESS'] = '172.17.0.1'  # 使用Docker主机IP
+        
+        # 3. 启动服务器
+        subprocess.run(['adb', 'start-server'], timeout=10)
+        time.sleep(2)
+        
+        # 4. 直接连接模拟器
+        emulator_ports = ['16384', '16448']  # 根据您的模拟器配置
+        connected_emulators = []
+        
+        for port in emulator_ports:
+            emulator_id = f"127.0.0.1:{port}"
+            print(f"尝试连接模拟器: {emulator_id}")
+            try:
+                result = subprocess.run(
+                    ['adb', 'connect', emulator_id], 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=10
+                )
+                if "connected" in result.stdout:
+                    print(f"成功连接到模拟器: {emulator_id}")
+                    connected_emulators.append(emulator_id)
+                else:
+                    print(f"连接模拟器失败: {result.stdout} {result.stderr}")
+            except Exception as e:
+                print(f"连接模拟器 {emulator_id} 时出错: {e}")
+        
+        # 5. 检查连接状态
+        if connected_emulators:
+            print(f"成功连接的模拟器: {connected_emulators}")
+            return connected_emulators
+        else:
+            print("未能连接到任何模拟器")
+            return []
+    except Exception as e:
+        print(f"重启ADB服务器和连接模拟器时出错: {e}")
+        return []
+
 def get_online_emulator_ids():
     """
     获取当前所有处于 'device' 状态（即在线）的模拟器ID列表。
@@ -67,7 +117,13 @@ def get_online_emulator_ids():
         print("信息: 尝试通过 MuMuConnector 确保模拟器已连接...")
         ensure_mumu_connected()
     else:
-        print("信息: 在 Docker 环境中，假设模拟器已由主机 ADB 管理。")
+        print("信息: 在 Docker 环境中，尝试直接连接模拟器...")
+        # 尝试直接重启服务器并连接
+        direct_connected = restart_adb_server_and_connect_emulator()
+        if direct_connected:
+            return direct_connected
+        else:
+            print("直接连接失败，尝试标准ADB设备检测...")
     
     try:
         max_retries = 3 # 稍微增加重试次数
@@ -84,7 +140,7 @@ def get_online_emulator_ids():
                     capture_output=True, 
                     text=True,
                     check=True,
-                    timeout=10 # 增加超时时间
+                    timeout=30 # 增加到30秒
                 )
                 print(f"ADB 命令成功执行。输出: \n{result.stdout}")
                 break # 成功则跳出循环
@@ -125,34 +181,50 @@ def get_online_emulator_ids():
         emulator_info = {}
         
         for emu_id in online_emulators:
-            try:
-                verify_result = subprocess.run(
-                    ['adb', '-s', emu_id, 'shell', 'getprop', 'ro.product.model'],
-                    capture_output=True, text=True, timeout=5 # 增加超时
-                )
-                
-                if verify_result.returncode == 0 and verify_result.stdout.strip():
-                    model = verify_result.stdout.strip()
-                    
-                    android_id_result = subprocess.run(
-                        ['adb', '-s', emu_id, 'shell', 'settings', 'get', 'secure', 'android_id'],
-                        capture_output=True, text=True, timeout=5 # 增加超时
+            max_verify_retries = 3
+            verified = False
+            
+            for verify_attempt in range(max_verify_retries):
+                try:
+                    print(f"验证模拟器 {emu_id} (尝试 {verify_attempt+1}/{max_verify_retries})...")
+                    verify_result = subprocess.run(
+                        ['adb', '-s', emu_id, 'shell', 'getprop', 'ro.product.model'],
+                        capture_output=True, text=True, timeout=20
                     )
-                    android_id = android_id_result.stdout.strip() if android_id_result.returncode == 0 else "unknown"
                     
-                    emulator_info[emu_id] = {
-                        "model": model,
-                        "android_id": android_id
-                    }
-                    
-                    print(f"验证模拟器 {emu_id} 成功: 型号 = {model}, Android ID = {android_id}")
-                    verified_emulators.append(emu_id)
-                else:
-                    print(f"警告: 模拟器 {emu_id} 验证失败 (获取型号失败或无输出): {verify_result.stderr.strip() if verify_result.stderr else '无错误信息'}")
-            except subprocess.TimeoutExpired:
-                print(f"验证模拟器 {emu_id} 时超时。")
-            except Exception as e:
-                print(f"验证模拟器 {emu_id} 时出错: {e}")
+                    if verify_result.returncode == 0 and verify_result.stdout.strip():
+                        model = verify_result.stdout.strip()
+                        
+                        android_id_result = subprocess.run(
+                            ['adb', '-s', emu_id, 'shell', 'settings', 'get', 'secure', 'android_id'],
+                            capture_output=True, text=True, timeout=20
+                        )
+                        android_id = android_id_result.stdout.strip() if android_id_result.returncode == 0 else "unknown"
+                        
+                        emulator_info[emu_id] = {
+                            "model": model,
+                            "android_id": android_id
+                        }
+                        
+                        print(f"验证模拟器 {emu_id} 成功: 型号 = {model}, Android ID = {android_id}")
+                        verified_emulators.append(emu_id)
+                        verified = True
+                        break  # 验证成功，跳出重试循环
+                    else:
+                        print(f"警告: 模拟器 {emu_id} 验证失败 (获取型号失败或无输出): {verify_result.stderr.strip() if verify_result.stderr else '无错误信息'}")
+                except subprocess.TimeoutExpired:
+                    print(f"验证模拟器 {emu_id} 时超时 (尝试 {verify_attempt+1}/{max_verify_retries})。")
+                    if verify_attempt < max_verify_retries - 1:
+                        print(f"将在2秒后重试...")
+                        time.sleep(2)
+                except Exception as e:
+                    print(f"验证模拟器 {emu_id} 时出错 (尝试 {verify_attempt+1}/{max_verify_retries}): {e}")
+                    if verify_attempt < max_verify_retries - 1:
+                        print(f"将在2秒后重试...")
+                        time.sleep(2)
+            
+            if not verified:
+                print(f"模拟器 {emu_id} 多次验证失败，跳过此模拟器。")
         
         print(f"最终验证通过的模拟器: {verified_emulators}")
         # print(f"模拟器详细信息: {emulator_info}") # 调试时可以取消注释
@@ -174,14 +246,14 @@ def verify_emulator_available(emulator_id):
     try:
         # 检查连接状态
         status_cmd = ['adb', '-s', emulator_id, 'get-state']
-        status_result = subprocess.run(status_cmd, capture_output=True, text=True, timeout=5) # 增加超时
+        status_result = subprocess.run(status_cmd, capture_output=True, text=True, timeout=20)
         if status_result.returncode != 0 or status_result.stdout.strip() != 'device':
             print(f"模拟器 {emulator_id} 状态检查失败: {status_result.stdout.strip()} {status_result.stderr.strip()}")
             return False
         
         # 执行简单命令验证响应能力
         echo_cmd = ['adb', '-s', emulator_id, 'shell', 'echo', 'test_connection']
-        echo_result = subprocess.run(echo_cmd, capture_output=True, text=True, timeout=5) # 增加超时
+        echo_result = subprocess.run(echo_cmd, capture_output=True, text=True, timeout=20)
         if echo_result.returncode != 0 or 'test_connection' not in echo_result.stdout:
             print(f"模拟器 {emulator_id} 响应测试失败: {echo_result.stdout.strip()} {echo_result.stderr.strip()}")
             return False
