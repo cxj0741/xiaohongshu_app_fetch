@@ -14,3 +14,6 @@ XHS_APP_ACTIVITY=
 # 其他 Appium Capabilities (注意: 从 .env 读取的是字符串, 需要转换类型)
 APPIUM_NO_RESET=
 APPIUM_NEW_COMMAND_TIMEOUT=
+
+# mumu模拟器安装路径
+MUMU_PATH=

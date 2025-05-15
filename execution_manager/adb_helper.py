@@ -1,13 +1,50 @@
+# python -m execution_manager.adb_helper
 import subprocess
 import re # 正则表达式模块，可选，用于更复杂的解析
 import time
 import platform
+import os
+from pathlib import Path
+
+# 导入MuMu连接器
+try:
+    from .mumu_connector import MuMuConnector
+except ImportError:
+    try:
+        from mumu_connector import MuMuConnector
+    except ImportError:
+        MuMuConnector = None
+
+def ensure_mumu_connected():
+    """确保所有MuMu模拟器都已连接到ADB"""
+    if MuMuConnector is None:
+        print("警告: MuMuConnector未导入，跳过自动连接")
+        return False
+    
+    try:
+        # 从环境变量获取MuMu路径
+        mumu_path = os.getenv('MUMU_PATH')
+        connector = MuMuConnector(mumu_path=mumu_path)
+        connected_devices = connector.connect_all_instances()
+        
+        if connected_devices:
+            print(f"已自动连接 {len(connected_devices)} 个MuMu模拟器")
+            return True
+        else:
+            print("未找到运行中的MuMu模拟器实例")
+            return False
+    except Exception as e:
+        print(f"自动连接MuMu模拟器时出错: {e}")
+        return False
 
 def get_online_emulator_ids():
     """
     获取当前所有处于 'device' 状态（即在线）的模拟器ID列表。
     增强了对IP:端口格式模拟器的识别。
     """
+    # 首先尝试自动连接MuMu模拟器
+    ensure_mumu_connected()
+    
     try:
         # 尝试多次执行ADB命令，因为有时候可能会不稳定
         max_retries = 2
