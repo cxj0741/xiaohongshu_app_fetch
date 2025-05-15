@@ -1,0 +1,27 @@
+# Git
+.git
+.gitignore
+
+# Python virtual environment
+venv/
+.venv/
+env/
+*.pyc
+__pycache__/
+
+# IDE / Editor specific files
+.idea/
+.vscode/
+*.swp
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Local environment files (if you use docker-compose env_file for runtime config)
+# .env # 如果您希望.env文件只在运行时通过docker-compose注入，而不是打包进镜像
+
+# Test files or large data not needed in production image
+tests/
+test_data/
+*.log

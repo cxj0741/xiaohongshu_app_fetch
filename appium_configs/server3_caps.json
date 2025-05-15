@@ -1,1 +1,24 @@
-{"appium:systemPort": 8202, "appium:wdaLocalPort": 8102, "appium:chromedriverPort": 9517}
+{
+    "platformName": "Android",
+    "appium:automationName": "UiAutomator2",
+    "appium:platformVersion": "12.0",
+    "appium:deviceName": "MuMuPlayer_Instance_3",
+    "appium:udid": "YOUR_EMULATOR_UDID_FOR_SERVER_3",
+    "appium:appPackage": "com.xingin.xhs",
+    "appium:appActivity": ".index.v2.IndexActivityV2",
+    "appium:noReset": true,
+    "appium:ensureWebviewsHavePages": true,
+    "appium:nativeWebScreenshot": true,
+    "appium:newCommandTimeout": 3600,
+    "appium:skipServerInstallation": false,
+    "appium:dontStopAppOnReset": true,
+    "appium:fullReset": false,
+    "appium:adbExecTimeout": 60000,
+    "appium:uiautomator2ServerInstallTimeout": 120000,
+    "appium:uiautomator2ServerLaunchTimeout": 60000,
+    "appium:systemPort": 8202,
+    "appium:chromedriverPort": 9517,
+    "appium:adbHost": "host.docker.internal",
+    "appium:adbPort": 5037
+  }
+  

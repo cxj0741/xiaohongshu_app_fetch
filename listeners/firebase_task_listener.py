@@ -20,6 +20,8 @@ from services.product_service import fetch_products_by_keyword
 from core.driver_manager import AppiumDriverContextManager 
 # 假设 ResourceAllocator 在 execution_manager.resource_allocator
 from execution_manager.resource_allocator import ResourceAllocator 
+# 添加这一行导入adb_helper
+from execution_manager import adb_helper
 # --- 模块导入结束 ---
 
 

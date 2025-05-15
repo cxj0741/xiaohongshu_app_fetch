@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Mitmproxy 服务 (之前的小红书数据拦截部分)
+  # Mitmproxy 服务
   mitmproxy:
     image: mitmproxy/mitmproxy
     container_name: mitmproxy_service_main
@@ -9,38 +9,42 @@ services:
       - "8080:8080" # Mitmproxy 代理端口
       # - "8081:8081" # 如果需要 mitmweb 界面，取消注释此行
     volumes:
-      - ./mitmproxy_scripts:/home/mitmproxy/scripts:ro # 挂载拦截脚本 (只读)
-      - ./mitmproxy_certs:/home/mitmproxy/.mitmproxy   # 持久化证书
-      - ./shared_xhs_data:/home/mitmproxy/xhs_data     # Mitmproxy脚本写入JSON的目录
+      - ./mitmproxy_scripts:/home/mitmproxy/scripts:ro
+      - ./mitmproxy_certs:/home/mitmproxy/.mitmproxy
+      - ./shared_xhs_data:/home/mitmproxy/xhs_data
     working_dir: /home/mitmproxy
     command: >
-      mitmdump # 或者 mitmproxy, mitmweb
+      mitmdump
       -s /home/mitmproxy/scripts/xhs_interceptor.py
       --set listen_host=0.0.0.0
       --set block_global=false
-      --set flow_detail=0 # 调整日志详细程度
+      --set flow_detail=0
     restart: unless-stopped
     networks:
       - automation_suite_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
-  # 数据上传服务 (将JSON上传到MongoDB)
+  # 数据上传服务
   uploader:
     build:
-      context: ./uploader_service # Dockerfile 位于 uploader_service 子目录
+      context: ./uploader_service
       dockerfile: Dockerfile
     container_name: uploader_service_main
     env_file:
-      - ./.env # 从项目根目录的 .env 文件加载环境变量
+      - ./.env
     volumes:
-      - ./shared_xhs_data:/app/xhs_data # 挂载共享数据目录，供上传脚本读取
+      - ./shared_xhs_data:/app/xhs_data
     working_dir: /app
-    depends_on: # 可选，逻辑上依赖Mitmproxy产生数据
+    depends_on:
       - mitmproxy
     restart: unless-stopped
     networks:
       - automation_suite_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
-  # Appium 服务实例
+  # Appium 服务实例 1
   appium_server1:
     image: appium/appium
     container_name: appium_server1_main
@@ -48,16 +52,22 @@ services:
       - "4723:4723"
     volumes:
       - ./appium_configs/server1_caps.json:/app/server1_caps.json:ro
-      - ./appium_logs/appium_server1.log:/app/appium_server1.log # 可选，用于持久化日志
+      - ./appium_logs/appium_server1.log:/app/appium_server1.log
+    environment:
+      - ANDROID_ADB_SERVER_ADDRESS=host.docker.internal
+      - ANDROID_ADB_SERVER_PORT=5037
     command: >
       appium server --port 4723 --address 0.0.0.0
       --default-capabilities /app/server1_caps.json
-      --use-drivers uiautomator2 --log /app/appium_server1.log --log-level info
-      --allow-insecure adb_shell --adb-host host.docker.internal
+      --use-drivers uiautomator2 --log /app/appium_server1.log --log-level debug
+      --allow-insecure adb_shell
     restart: unless-stopped
     networks:
       - automation_suite_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
+  # Appium 服务实例 2
   appium_server2:
     image: appium/appium
     container_name: appium_server2_main
@@ -66,15 +76,21 @@ services:
     volumes:
       - ./appium_configs/server2_caps.json:/app/server2_caps.json:ro
       - ./appium_logs/appium_server2.log:/app/appium_server2.log
+    environment:
+      - ANDROID_ADB_SERVER_ADDRESS=host.docker.internal
+      - ANDROID_ADB_SERVER_PORT=5037
     command: >
       appium server --port 4725 --address 0.0.0.0
       --default-capabilities /app/server2_caps.json
-      --use-drivers uiautomator2 --log /app/appium_server2.log --log-level info
-      --allow-insecure adb_shell --adb-host host.docker.internal
+      --use-drivers uiautomator2 --log /app/appium_server2.log --log-level debug
+      --allow-insecure adb_shell
     restart: unless-stopped
     networks:
       - automation_suite_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
+  # Appium 服务实例 3
   appium_server3:
     image: appium/appium
     container_name: appium_server3_main
@@ -83,37 +99,42 @@ services:
     volumes:
       - ./appium_configs/server3_caps.json:/app/server3_caps.json:ro
       - ./appium_logs/appium_server3.log:/app/appium_server3.log
+    environment:
+      - ANDROID_ADB_SERVER_ADDRESS=host.docker.internal
+      - ANDROID_ADB_SERVER_PORT=5037
     command: >
       appium server --port 4727 --address 0.0.0.0
       --default-capabilities /app/server3_caps.json
-      --use-drivers uiautomator2 --log /app/appium_server3.log --log-level info
-      --allow-insecure adb_shell --adb-host host.docker.internal
+      --use-drivers uiautomator2 --log /app/appium_server3.log --log-level debug
+      --allow-insecure adb_shell
     restart: unless-stopped
     networks:
       - automation_suite_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
-  # 您的 XIAOHONGSHUZDH 项目 (Firebase Task Listener)
+  # XIAOHONGSHUZDH 项目 (Firebase Task Listener)
   firebase_listener:
     build:
       context: . # Dockerfile 位于当前目录 (项目根目录)
       dockerfile: Dockerfile
     container_name: firebase_listener_main
     env_file:
-      - ./.env # 从项目根目录的 .env 文件加载环境变量
-    # 如果您的 firebase_listener 需要访问 appium_configs 或其他项目内的文件，
-    # 它们已经通过 COPY . . 在其 Dockerfile 中被复制到镜像中了。
-    # 如果需要写日志到主机，可以添加 volumes:
-    # volumes:
-    #   - ./firebase_listener_logs:/app/logs
-    depends_on: # 逻辑上可能依赖 Appium 服务先启动
+      - ./.env
+    environment:
+      - IS_IN_DOCKER_CONTAINER=true
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
       - appium_server1
       - appium_server2
       - appium_server3
-      # 也可能依赖 uploader 服务，如果它需要 uploader 先做某些初始化
-      # - uploader
     restart: unless-stopped
     networks:
       - automation_suite_net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 networks:
   automation_suite_net:
