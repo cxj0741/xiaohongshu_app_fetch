@@ -5,6 +5,7 @@ import random
 import platform
 import subprocess
 from . import adb_helper # 从同一目录导入 adb_helper
+import requests
 
 class ResourceAllocator:
     def __init__(self, config_file_path='config/appium_instances_config.yaml'):
@@ -72,6 +73,31 @@ class ResourceAllocator:
         except Exception as e:
             print(f"清理UiAutomator服务时出错: {e}")
 
+    def verify_appium_server_running(self, server_url):
+        """
+        验证Appium服务器是否正常运行
+        
+        :param server_url: Appium服务器URL
+        :return: 如果服务器正常运行返回True，否则返回False
+        """
+        try:
+            # 构建Appium服务器状态API的URL
+            status_url = f"{server_url}/status"
+            
+            # 发送请求，设置较短的超时时间
+            response = requests.get(status_url, timeout=5)
+            
+            # 检查响应状态码
+            if response.status_code == 200:
+                print(f"Appium服务器 {server_url} 状态正常")
+                return True
+            else:
+                print(f"Appium服务器 {server_url} 返回错误状态码: {response.status_code}")
+                return False
+        except Exception as e:
+            print(f"连接Appium服务器 {server_url} 失败: {e}")
+            return False
+
     def allocate_resource(self):
         """
         查找并分配一个空闲的 Appium 服务器和模拟器组合。
@@ -127,6 +153,11 @@ class ResourceAllocator:
             # 1. 跳过已繁忙的服务器
             if server_id in self._busy_server_ids:
                 print(f"ResourceAllocator: 服务器 '{server_id}' 当前繁忙，跳过。")
+                continue
+            
+            # 新增：检查Appium服务器是否运行
+            if not self.verify_appium_server_running(appium_url):
+                print(f"ResourceAllocator: 服务器 '{server_id}' 的Appium实例 ({appium_url}) 未运行或无响应，跳过。")
                 continue
 
             # 2. 尝试分配指定的模拟器
@@ -261,3 +292,51 @@ if __name__ == '__main__':
         print(f"测试过程中发生错误: {main_e}")
         import traceback
         traceback.print_exc()
+
+def initialize_app_services():
+    global db, ALLOCATOR, server_health_status
+    # 已有的初始化代码...
+    
+    # 在ResourceAllocator初始化成功后，检查所有服务器的状态
+    if ALLOCATOR and ALLOCATOR.appium_servers_config:
+        print("检查所有Appium服务器状态...")
+        available_servers = 0
+        
+        for server_conf in ALLOCATOR.appium_servers_config:
+            server_id = server_conf.get('id')
+            server_url = server_conf.get('url')
+            intended_emulator = server_conf.get('intended_emulator_id')
+            
+            if server_id and server_url:
+                # 首先检查该服务器对应的模拟器是否在线
+                emulator_online = False
+                if intended_emulator:
+                    online_emulators = get_online_emulator_ids()
+                    if intended_emulator in online_emulators:
+                        emulator_online = True
+                        print(f"服务器 {server_id} 的指定模拟器 {intended_emulator} 在线。")
+                    else:
+                        print(f"警告: 服务器 {server_id} 的指定模拟器 {intended_emulator} 不在线。")
+                
+                # 再检查Appium服务是否正常运行
+                server_running = ALLOCATOR.verify_appium_server_running(server_url)
+                
+                # 更新服务器健康状态
+                if emulator_online and server_running:
+                    available_servers += 1
+                    server_health_status[server_id]['status'] = 'available'
+                    print(f"服务器 {server_id} ({server_url}) 及其模拟器正常。")
+                else:
+                    server_health_status[server_id]['status'] = 'unavailable'
+                    if not emulator_online:
+                        print(f"警告: 服务器 {server_id} 的模拟器不在线。")
+                    if not server_running:
+                        print(f"警告: 服务器 {server_id} 的Appium服务 ({server_url}) 不可用。")
+        
+        if available_servers == 0:
+            print("错误: 没有可用的Appium服务器和模拟器组合，程序无法正常工作。")
+            return False
+        else:
+            print(f"共有 {available_servers}/{len(ALLOCATOR.appium_servers_config)} 个Appium服务器及模拟器可用。")
+    
+    return True
