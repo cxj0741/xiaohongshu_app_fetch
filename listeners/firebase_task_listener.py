@@ -20,6 +20,8 @@ from services.product_service import fetch_products_by_keyword
 from core.driver_manager import AppiumDriverContextManager 
 # 假设 ResourceAllocator 在 execution_manager.resource_allocator
 from execution_manager.resource_allocator import ResourceAllocator 
+# 添加 adb_helper 模块的导入
+from execution_manager.adb_helper import get_online_emulator_ids
 # --- 模块导入结束 ---
 
 
@@ -259,7 +261,7 @@ def appium_task_processor_loop(worker_name):
             if CLEAN_UIAUTOMATOR2_ON_RETRY and task_id in task_retry_counts and task_retry_counts[task_id] > 0:
                 # 尝试获取任何可用的设备进行清理
                 print(f"[{worker_name}][{task_id}] 任务已重试{task_retry_counts[task_id]}次，尝试清理所有模拟器上的UiAutomator2服务")
-                online_emulators = adb_helper.get_online_emulator_ids()
+                online_emulators = get_online_emulator_ids()
                 if online_emulators:
                     for emulator_id in online_emulators:
                         if emulator_id not in ALLOCATOR._busy_emulator_ids:
