@@ -23,3 +23,11 @@ class EnvironmentConfig:
             return os.getenv('DOCKER_MUMU_HOST', 'host.docker.internal')
         else:
             return 'localhost'
+
+    @staticmethod
+    def get_adb_server_host():
+        return os.getenv('ADB_SERVER_HOST', 'host.docker.internal')
+
+    @staticmethod
+    def get_adb_server_port():
+        return os.getenv('ADB_SERVER_PORT', '5037')

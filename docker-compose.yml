@@ -22,35 +22,14 @@ services:
     networks:
       - xhs_network
 
-  # MongoDB 数据库
-  mongodb:
-    image: mongo:latest
-    container_name: mongodb_service
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-    environment:
-      - MONGO_INITDB_DATABASE=xiaohongshu
-    restart: unless-stopped
-    networks:
-      - xhs_network
-
   # 数据上传服务
   uploader:
     build:
       context: ./uploader_service
       dockerfile: Dockerfile
     container_name: uploader_service
-    environment:
-      - MONGODB_URI=mongodb://mongodb:27017/
-      - MONGODB_DB=xiaohongshu
-      - MONGODB_COLLECTION=notes
     volumes:
       - ./shared_xhs_data:/app/xhs_data
-    depends_on:
-      - mongodb
-      - mitmproxy
     restart: unless-stopped
     networks:
       - xhs_network
@@ -70,6 +49,8 @@ services:
       - RUNNING_MODE=docker
     extra_hosts:
       - "host.docker.internal:host-gateway"  # 允许容器访问宿主机
+    ports:
+      - "5037:5037"  # ADB端口映射
     restart: unless-stopped
     networks:
       - xhs_network
@@ -77,6 +58,3 @@ services:
 networks:
   xhs_network:
     driver: bridge
-
-volumes:
-  mongodb_data:

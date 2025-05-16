@@ -38,32 +38,36 @@ def ensure_mumu_connected():
         print(f"自动连接MuMu模拟器时出错: {e}")
         return False
 
+def get_adb_command_prefix():
+    """获取ADB命令前缀，根据运行模式返回不同的配置"""
+    running_mode = os.getenv('RUNNING_MODE', 'local')
+    
+    if running_mode == 'docker':
+        # Docker模式：使用配置的ADB服务器
+        host = EnvironmentConfig.get_adb_server_host()
+        port = EnvironmentConfig.get_adb_server_port()
+        return ['adb', '-H', host, '-P', port]
+    else:
+        # 本地模式：使用默认的ADB配置
+        return ['adb']
+
 def get_online_emulator_ids():
     """
-    获取当前所有处于 'device' 状态（即在线）的模拟器ID列表。
-    增强了对IP:端口格式模拟器的识别。
+    获取当前所有处于 'device' 状态的模拟器ID列表
+    根据运行模式使用不同的ADB配置
     """
     # 首先尝试自动连接MuMu模拟器
     ensure_mumu_connected()
     
     try:
-        # 尝试多次执行ADB命令，因为有时候可能会不稳定
-        max_retries = 2
-        for attempt in range(max_retries):
-            try:
-                result = subprocess.run(
-                    ['adb', 'devices'], 
-                    capture_output=True, 
-                    text=True,
-                    check=True
-                )
-                break
-            except Exception as e:
-                print(f"ADB命令执行失败 (尝试 {attempt+1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(2)
-                else:
-                    raise
+        # 使用运行模式感知的ADB命令
+        adb_cmd = get_adb_command_prefix() + ['devices']
+        result = subprocess.run(
+            adb_cmd, 
+            capture_output=True, 
+            text=True,
+            check=True
+        )
         
         online_emulators = []
         output_lines = result.stdout.strip().splitlines()

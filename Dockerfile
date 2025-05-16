@@ -1,5 +1,5 @@
 # 使用官方 Python 运行时作为父镜像 (请根据您的项目选择合适的 Python 版本，例如 3.9, 3.10 等)
-FROM python:3.9-slim
+FROM python:3.11-slim
 
 # 设置环境变量，确保 Python 输出是无缓冲的，便于在 Docker 日志中实时查看
 ENV PYTHONUNBUFFERED=1
