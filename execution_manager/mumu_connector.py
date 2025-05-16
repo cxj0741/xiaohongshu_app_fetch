@@ -5,6 +5,7 @@ import json
 import time
 from pathlib import Path
 import platform
+from config.environment import EnvironmentConfig
 
 class MuMuConnector:
     def __init__(self, mumu_path=None, max_instance=3):
@@ -15,15 +16,20 @@ class MuMuConnector:
         """
         self.max_instance = max_instance
         
-        # 如果没有提供路径，尝试从环境变量读取
+        # 使用环境配置获取路径
         if mumu_path is None:
-            mumu_path = os.getenv('MUMU_PATH', r'C:\xiaohongshu\MuMu Player 12')
+            mumu_path = EnvironmentConfig.get_mumu_path()
         
         self.mumu_path = Path(mumu_path)
-        self.shell_path = self.mumu_path / 'shell'
-        self.manager_exe = self.shell_path / 'MuMuManager.exe'
+        if EnvironmentConfig.is_docker():
+            # Docker环境下，直接使用映射的可执行文件
+            self.manager_exe = self.mumu_path
+        else:
+            # 本地环境使用完整路径
+            self.shell_path = self.mumu_path / 'shell'
+            self.manager_exe = self.shell_path / 'MuMuManager.exe'
         
-        if not self.manager_exe.exists():
+        if not Path(self.manager_exe).exists():
             raise FileNotFoundError(f"MuMuManager.exe 未找到: {self.manager_exe}")
         
         print(f"MuMu连接器初始化完成，路径: {self.mumu_path}")
@@ -39,17 +45,19 @@ class MuMuConnector:
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
                 data = json.loads(result.stdout)
                 
-                # 检查实例是否运行中
                 if 'errcode' in data and data['errcode'] == -201:
                     print(f"MuMu实例 {i} 未运行")
                     continue
                 
                 if 'adb_host' in data and 'adb_port' in data:
+                    # 在Docker环境下替换localhost为host.docker.internal
+                    adb_host = EnvironmentConfig.get_mumu_host() if data['adb_host'] == 'localhost' else data['adb_host']
+                    
                     instance_info = {
                         'id': i,
-                        'adb_host': data['adb_host'],
+                        'adb_host': adb_host,
                         'adb_port': data['adb_port'],
-                        'device_id': f"{data['adb_host']}:{data['adb_port']}"
+                        'device_id': f"{adb_host}:{data['adb_port']}"
                     }
                     running_instances.append(instance_info)
                     print(f"检测到运行中的MuMu实例 {i}: {instance_info['device_id']}")

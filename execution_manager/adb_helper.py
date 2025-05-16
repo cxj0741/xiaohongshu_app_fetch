@@ -5,6 +5,7 @@ import time
 import platform
 import os
 from pathlib import Path
+from config.environment import EnvironmentConfig
 
 # 导入MuMu连接器
 try:
@@ -22,8 +23,8 @@ def ensure_mumu_connected():
         return False
     
     try:
-        # 从环境变量获取MuMu路径
-        mumu_path = os.getenv('MUMU_PATH')
+        # 使用环境配置获取MuMu路径
+        mumu_path = EnvironmentConfig.get_mumu_path()
         connector = MuMuConnector(mumu_path=mumu_path)
         connected_devices = connector.connect_all_instances()
         
