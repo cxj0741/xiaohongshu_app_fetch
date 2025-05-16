@@ -6,6 +6,6 @@ appium_servers:
     chromedriver_port: 9515
   - id: "server_2"
     url: "http://host.docker.internal:4725"
-    intended_emulator_id: "host.docker.internal:16386"
+    intended_emulator_id: "host.docker.internal:16416"
     system_port: 8201
     chromedriver_port: 9516
