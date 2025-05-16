@@ -13,15 +13,34 @@ class ResourceAllocator:
         初始化资源分配器。
         :param config_file_path: Appium 服务器实例配置文件的相对路径 (相对于项目根目录)。
         """
-        # 构建配置文件的绝对路径，假设此脚本位于 execution_manager 文件夹中
-        # 项目根目录 -> config -> appium_instances_config.yaml
+        # 构建配置文件的绝对路径
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        # Docker环境使用特定的配置文件
+        if os.getenv('RUNNING_MODE') == 'docker':
+            config_file_path = 'config/appium_instances_config.docker.yaml'
+            print(f"Docker环境检测到，使用配置文件: {config_file_path}")
+        
         absolute_config_path = os.path.join(project_root, config_file_path)
+        print(f"配置文件绝对路径: {absolute_config_path}")
 
         try:
             with open(absolute_config_path, 'r', encoding='utf-8') as f:
                 config_data = yaml.safe_load(f)
                 self.appium_servers_config = config_data.get('appium_servers', [])
+                
+                # Docker环境下修改URL
+                if os.getenv('RUNNING_MODE') == 'docker':
+                    for server in self.appium_servers_config:
+                        if '127.0.0.1' in server['url']:
+                            server['url'] = server['url'].replace('127.0.0.1', 'host.docker.internal')
+                        
+                # 打印加载的配置
+                print("加载的Appium服务器配置:")
+                for server in self.appium_servers_config:
+                    print(f"  - ID: {server.get('id')}")
+                    print(f"    URL: {server.get('url')}")
+                    print(f"    模拟器: {server.get('intended_emulator_id')}")
             if not self.appium_servers_config:
                 print(f"警告: 从 '{absolute_config_path}' 加载的 Appium 服务器配置为空或格式不正确。")
         except FileNotFoundError:
@@ -76,18 +95,12 @@ class ResourceAllocator:
     def verify_appium_server_running(self, server_url):
         """
         验证Appium服务器是否正常运行
-        
-        :param server_url: Appium服务器URL
-        :return: 如果服务器正常运行返回True，否则返回False
         """
         try:
-            # 构建Appium服务器状态API的URL
+            print(f"正在验证Appium服务器URL: {server_url}")
             status_url = f"{server_url}/status"
-            
-            # 发送请求，设置较短的超时时间
             response = requests.get(status_url, timeout=5)
             
-            # 检查响应状态码
             if response.status_code == 200:
                 print(f"Appium服务器 {server_url} 状态正常")
                 return True
@@ -148,6 +161,12 @@ class ResourceAllocator:
         for server_conf in shuffled_servers:
             server_id = server_conf.get('id')
             appium_url = server_conf.get('url')
+            
+            # 打印当前处理的服务器配置
+            print(f"正在处理服务器配置:")
+            print(f"  ID: {server_id}")
+            print(f"  URL: {appium_url}")
+            
             intended_emulator_id = server_conf.get('intended_emulator_id')
 
             # 1. 跳过已繁忙的服务器

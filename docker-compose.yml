@@ -41,16 +41,19 @@ services:
       dockerfile: Dockerfile
     container_name: firebase_listener_service
     volumes:
-      - ./firebase-service-account-key.json:/app/firebase-service-account-key.json:ro
-      - ./config:/app/config:ro
-      - ./docker.env:/app/.env:ro
-      - ${MUMU_INSTALL_PATH}:/mumu:ro  # MuMu模拟器路径映射
+      - ./firebase-service-account-key.json:/xiaohongshuZDH/firebase-service-account-key.json:ro
+      - ./config:/xiaohongshuZDH/config:ro
+      - ./docker.env:/xiaohongshuZDH/.env:ro
+      - ./shared_data:/xiaohongshuZDH/shared_data:ro
+      - ./shared:/app/shared
     environment:
       - RUNNING_MODE=docker
+      - ADB_SERVER_HOST=host.docker.internal
+      - ADB_SERVER_PORT=5037
+      - ANDROID_ADB_SERVER_HOST=host.docker.internal
+      - ANDROID_ADB_SERVER_PORT=5037
     extra_hosts:
-      - "host.docker.internal:host-gateway"  # 允许容器访问宿主机
-    ports:
-      - "5037:5037"  # ADB端口映射
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     networks:
       - xhs_network

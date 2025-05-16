@@ -6,6 +6,7 @@ import platform
 import os
 from pathlib import Path
 from config.environment import EnvironmentConfig
+import json
 
 # 导入MuMu连接器
 try:
@@ -52,19 +53,20 @@ def get_adb_command_prefix():
         return ['adb']
 
 def get_online_emulator_ids():
-    """
-    获取当前所有处于 'device' 状态的模拟器ID列表
-    根据运行模式使用不同的ADB配置
-    """
-    # 首先尝试自动连接MuMu模拟器
-    ensure_mumu_connected()
-    
+    """获取当前所有处于 'device' 状态的模拟器ID列表"""
     try:
-        # 使用运行模式感知的ADB命令
-        adb_cmd = get_adb_command_prefix() + ['devices']
+        # 在Docker环境中设置ADB服务器
+        if os.getenv('RUNNING_MODE') == 'docker':
+            os.environ['ANDROID_ADB_SERVER_HOST'] = 'host.docker.internal'
+            os.environ['ANDROID_ADB_SERVER_PORT'] = '5037'
+            
+        # 获取正确的ADB命令前缀
+        adb_cmd = get_adb_command_prefix()
+        
+        # 获取设备列表
         result = subprocess.run(
-            adb_cmd, 
-            capture_output=True, 
+            adb_cmd + ['devices'],
+            capture_output=True,
             text=True,
             check=True
         )
@@ -91,18 +93,18 @@ def get_online_emulator_ids():
         
         for emu_id in online_emulators:
             try:
-                # 尝试获取模拟器的一些基本信息，验证连接
+                # 使用正确的ADB命令前缀
                 verify_result = subprocess.run(
-                    ['adb', '-s', emu_id, 'shell', 'getprop', 'ro.product.model'],
+                    adb_cmd + ['-s', emu_id, 'shell', 'getprop', 'ro.product.model'],
                     capture_output=True, text=True, timeout=3
                 )
                 
                 if verify_result.returncode == 0:
                     model = verify_result.stdout.strip()
                     
-                    # 获取更多信息来区分模拟器
+                    # 使用正确的ADB命令前缀
                     android_id_result = subprocess.run(
-                        ['adb', '-s', emu_id, 'shell', 'settings', 'get', 'secure', 'android_id'],
+                        adb_cmd + ['-s', emu_id, 'shell', 'settings', 'get', 'secure', 'android_id'],
                         capture_output=True, text=True, timeout=3
                     )
                     android_id = android_id_result.stdout.strip() if android_id_result.returncode == 0 else "unknown"
@@ -133,20 +135,20 @@ def get_online_emulator_ids():
 def verify_emulator_available(emulator_id):
     """
     验证模拟器是否可用，更详细的测试
-    
-    :param emulator_id: 模拟器ID
-    :return: 可用返回True，否则返回False
     """
     try:
+        # 获取正确的ADB命令前缀
+        adb_cmd = get_adb_command_prefix()
+        
         # 检查连接状态
-        status_cmd = ['adb', '-s', emulator_id, 'get-state']
+        status_cmd = adb_cmd + ['-s', emulator_id, 'get-state']
         status_result = subprocess.run(status_cmd, capture_output=True, text=True, timeout=3)
         if status_result.returncode != 0 or status_result.stdout.strip() != 'device':
             print(f"模拟器 {emulator_id} 状态检查失败: {status_result.stderr}")
             return False
         
         # 执行简单命令验证响应能力
-        echo_cmd = ['adb', '-s', emulator_id, 'shell', 'echo', 'test_connection']
+        echo_cmd = adb_cmd + ['-s', emulator_id, 'shell', 'echo', 'test_connection']
         echo_result = subprocess.run(echo_cmd, capture_output=True, text=True, timeout=3)
         if echo_result.returncode != 0 or 'test_connection' not in echo_result.stdout:
             print(f"模拟器 {emulator_id} 响应测试失败")
@@ -169,3 +171,35 @@ if __name__ == '__main__':
             print(f"- {emu_id} (可用: {'是' if available else '否'})")
     else:
         print("未检测到在线模拟器，或者发生了错误。")
+
+def _try_cleanup_uiautomator(self, device_id):
+    """尝试清理可能崩溃的UiAutomator2服务"""
+    try:
+        print(f"尝试清理设备 {device_id} 上的UiAutomator服务...")
+        # 检测操作系统
+        is_windows = platform.system() == "Windows"
+        
+        # 获取正确的ADB命令前缀
+        adb_cmd = get_adb_command_prefix()
+        
+        # 停止服务
+        subprocess.run(
+            adb_cmd + ['-s', device_id, 'shell', 'am', 'force-stop', 'io.appium.uiautomator2.server'],
+            shell=is_windows, timeout=5
+        )
+        
+        # 清理服务
+        subprocess.run(
+            adb_cmd + ['-s', device_id, 'shell', 'pm', 'clear', 'io.appium.uiautomator2.server'],
+            shell=is_windows, timeout=5
+        )
+        
+        subprocess.run(
+            adb_cmd + ['-s', device_id, 'shell', 'pm', 'clear', 'io.appium.uiautomator2.server.test'],
+            shell=is_windows, timeout=5
+        )
+        
+        time.sleep(2)
+        print(f"UiAutomator服务清理完成")
+    except Exception as e:
+        print(f"清理UiAutomator服务时出错: {e}")

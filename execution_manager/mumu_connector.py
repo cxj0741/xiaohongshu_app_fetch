@@ -16,16 +16,16 @@ class MuMuConnector:
         """
         self.max_instance = max_instance
         
-        # 使用环境配置获取路径
-        if mumu_path is None:
-            mumu_path = EnvironmentConfig.get_mumu_path()
-        
-        self.mumu_path = Path(mumu_path)
         if EnvironmentConfig.is_docker():
-            # Docker环境下，直接使用映射的可执行文件
-            self.manager_exe = self.mumu_path
+            # Docker环境下，直接读取共享文件
+            self.devices_file = Path("/xiaohongshuZDH/shared_data/mumu_devices.json")
+            # Docker环境下不需要manager_exe
+            self.manager_exe = None
         else:
             # 本地环境使用完整路径
+            if mumu_path is None:
+                mumu_path = EnvironmentConfig.get_mumu_path()
+            self.mumu_path = Path(mumu_path)
             self.shell_path = self.mumu_path / 'shell'
             self.manager_exe = self.shell_path / 'MuMuManager.exe'
         
@@ -36,6 +36,35 @@ class MuMuConnector:
     
     def get_running_instances(self):
         """获取所有正在运行的MuMu实例及其ADB端口"""
+        if EnvironmentConfig.is_docker():
+            try:
+                with open(self.devices_file, 'r') as f:
+                    data = json.load(f)
+                
+                running_instances = []
+                for device in data.get('devices', []):
+                    # 替换localhost和127.0.0.1为host.docker.internal
+                    adb_host = EnvironmentConfig.get_mumu_host() if device['adb_host'] in ['localhost', '127.0.0.1'] else device['adb_host']
+                    
+                    instance_info = {
+                        'id': device['id'],
+                        'adb_host': adb_host,
+                        'adb_port': device['adb_port'],
+                        'device_id': f"{adb_host}:{device['adb_port']}"
+                    }
+                    running_instances.append(instance_info)
+                    print(f"从文件检测到运行中的MuMu实例 {instance_info['id']}: {instance_info['device_id']}")
+                
+                return running_instances
+            except Exception as e:
+                print(f"从文件读取MuMu实例信息时出错: {e}")
+                return []
+        else:
+            # 原有的exe调用逻辑
+            return self._get_instances_from_exe()
+    
+    def _get_instances_from_exe(self):
+        """从exe获取实例信息（原有的get_running_instances方法的内容）"""
         running_instances = []
         
         # 检查从0到max_instance-1的实例

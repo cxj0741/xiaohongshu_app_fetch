@@ -1,0 +1,11 @@
+appium_servers:
+  - id: "server_1"
+    url: "http://host.docker.internal:4723"
+    intended_emulator_id: "host.docker.internal:16384"
+    system_port: 8200
+    chromedriver_port: 9515
+  - id: "server_2"
+    url: "http://host.docker.internal:4725"
+    intended_emulator_id: "host.docker.internal:16386"
+    system_port: 8201
+    chromedriver_port: 9516

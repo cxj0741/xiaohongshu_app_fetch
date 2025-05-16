@@ -1,9 +1,13 @@
 # 使用官方 Python 运行时作为父镜像 (请根据您的项目选择合适的 Python 版本，例如 3.9, 3.10 等)
 FROM python:3.11-slim
 
+# 安装ADB
+RUN apt-get update && apt-get install -y android-tools-adb
+
 # 设置环境变量，确保 Python 输出是无缓冲的，便于在 Docker 日志中实时查看
 ENV PYTHONUNBUFFERED=1
 ENV RUNNING_MODE=docker
+ENV ADB_SERVER_SOCKET=host.docker.internal:5037
 
 # 设置容器内的工作目录
 WORKDIR /app
@@ -22,6 +26,9 @@ COPY . .
 
 # 复制Docker环境配置文件
 COPY docker.env .env
+
+# 确保Docker配置文件存在
+RUN test -f /app/config/appium_instances_config.docker.yaml || (echo "Docker配置文件不存在" && exit 1)
 
 # 容器启动时执行的命令
 # 运行 listeners 包下的 firebase_task_listener 模块
