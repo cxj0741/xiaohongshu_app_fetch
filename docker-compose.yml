@@ -6,18 +6,21 @@ services:
     image: mitmproxy/mitmproxy
     container_name: mitmproxy_service
     ports:
-      - "8080:8080"  # 代理端口
+      - "8085:8085"  # 代理端口
+      - "8083:8083"  # web界面端口
     volumes:
       - ./mitmproxy_scripts:/home/mitmproxy/scripts:ro
       - ./mitmproxy_certs:/home/mitmproxy/.mitmproxy
       - ./shared_xhs_data:/home/mitmproxy/xhs_data
     working_dir: /home/mitmproxy
     command: >
-      mitmdump
+      mitmweb
       -s /home/mitmproxy/scripts/xhs_interceptor.py
       --set listen_host=0.0.0.0
       --set block_global=false
       --set flow_detail=1
+      -p 8085
+      --web-port 8083
     restart: unless-stopped
     networks:
       - xhs_network
