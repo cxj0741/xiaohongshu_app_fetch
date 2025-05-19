@@ -21,6 +21,8 @@ services:
       --set flow_detail=1
       -p 8085
       --web-port 8083
+      --web-host 0.0.0.0  
+      --set web_password=xzxy123456
     restart: unless-stopped
     networks:
       - xhs_network
