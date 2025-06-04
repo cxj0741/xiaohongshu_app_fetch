@@ -3,7 +3,7 @@ from appium.options.android import UiAutomator2Options
 import os
 
 # 从环境变量中获取值，如果未设置，则使用提供的默认值
-APPIUM_SERVER_URL = os.getenv('APPIUM_SERVER_URL', 'http://127.0.0.1:4723') # 默认值
+APPIUM_SERVER_URL = os.getenv('APPIUM_SERVER_URL', 'http://192.168.0.102:4723') # 默认值
 
 # 默认设备配置 (这些可以被函数参数覆盖)
 # 将默认设备ID设置为空字符串，强制要求显式指定
