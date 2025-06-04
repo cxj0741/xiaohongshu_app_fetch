@@ -171,7 +171,12 @@ def process_task(task_id, task_data, allocation_info, worker_name="DefaultWorker
                 result = fetch_products_by_keyword(
                     driver=driver,
                     keyword=parameters.get('keyword'),
-                    swipe_count=parameters.get('swipe_count', 10)
+                    swipe_count=parameters.get('swipe_count', 10),
+                    sort_by_option=parameters.get('sort_by'),
+                    logistics_options=parameters.get('logistics_services'),
+                    search_scope_options=parameters.get('search_scopes'),
+                    min_price=parameters.get('min_price'),
+                    max_price=parameters.get('max_price')
                 )
             else:
                 raise ValueError(f"未知的 action: '{action}'")
