@@ -13,6 +13,8 @@ services:
       - ./mitmproxy_certs:/home/mitmproxy/.mitmproxy
       - ./shared_xhs_data:/home/mitmproxy/xhs_data
     working_dir: /home/mitmproxy
+    environment: # <--- 新增或修改这里
+      - TZ=Asia/Shanghai
     command: >
       mitmweb
       -s /home/mitmproxy/scripts/xhs_interceptor.py
