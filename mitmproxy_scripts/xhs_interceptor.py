@@ -9,10 +9,10 @@ import traceback
 logger = logging.getLogger("mitmproxy_xhs_scraper")
 logger.setLevel(logging.DEBUG)
 
-log_dir = "xhs_data"
+log_dir = "xhs_data" # 主数据/日志目录
 if not os.path.exists(log_dir):
     os.makedirs(log_dir)
-    logger.debug(f"创建数据及日志所属目录: {log_dir}")
+    logger.debug(f"创建主数据及日志所属目录: {log_dir}")
 
 log_file_path = os.path.join(log_dir, "xhs_scraper.log")
 file_handler = logging.FileHandler(log_file_path, encoding="utf-8")
@@ -30,25 +30,73 @@ logger.addHandler(console_handler)
 
 logger.info("--- 脚本启动，日志记录器已初始化 ---")
 
+# --- 全局变量 ---
 total_notes_count = 0
 total_products_count = 0
+active_search_tasks = {}  # 存储当前活动的商品搜索任务信息
+# active_search_tasks 结构:
+# {
+#     "search_id_123": {
+#           "task_folder_name": "关键词_YYYYMMDD_HHMMSS", # 文件夹的相对路径 (相对于log_dir)
+#           "original_keyword": "原始关键词",
+#           "start_time": timestamp
+#      }
+# }
+# (可选) TASK_TIMEOUT = 300 # 例如5分钟，用于清理旧的active_search_tasks条目，此处未实现清理
 
 try:
     def response(flow):
-        global total_notes_count
-        global total_products_count
+        global total_notes_count, total_products_count, active_search_tasks
 
         request_url = flow.request.url
-        keyword = "unknown"
-
+        
+        # 从URL中提取通用的 keyword 和 search_id (如果存在)
         parsed_url = urllib.parse.urlparse(request_url)
         query_params = urllib.parse.parse_qs(parsed_url.query)
-        if "keyword" in query_params:
-            keyword = query_params["keyword"][0]
+        
+        url_keyword = query_params.get("keyword", ["unknown"])[0] # 当前请求URL中的keyword
+        url_search_id = query_params.get("search_id", [None])[0] # 当前请求URL中的search_id
 
+        # 清理当前URL的keyword，用于文件名后缀 (filename_suffix_keyword)
+        safe_url_keyword_for_filename = "".join(c if c.isalnum() else "_" for c in url_keyword)
+        if not safe_url_keyword_for_filename: safe_url_keyword_for_filename = "no_keyword"
+
+        # --- 确定当前请求数据的基础保存路径 ---
+        current_save_path_base = log_dir # 默认保存在主数据目录
+
+        if "search.xiaohongshu.com/api/search/fls/products/v5" in request_url and url_search_id:
+            # 这是商品搜索API，并且有search_id，应用任务文件夹逻辑
+            if url_search_id not in active_search_tasks:
+                # 新的 search_id，开始一个新任务
+                task_start_time = time.time()
+                task_start_timestamp_str = time.strftime('%Y%m%d_%H%M%S', time.localtime(task_start_time))
+                
+                # 使用首次请求的关键词来命名任务文件夹
+                safe_task_keyword_for_folder = "".join(c if c.isalnum() else "_" for c in url_keyword)
+                if not safe_task_keyword_for_folder: safe_task_keyword_for_folder = "task_no_keyword"
+                
+                task_folder_relative_name = f"{safe_task_keyword_for_folder}_{task_start_timestamp_str}"
+                
+                active_search_tasks[url_search_id] = {
+                    "task_folder_name": task_folder_relative_name,
+                    "original_keyword": url_keyword, # 记录这个search_id首次关联的关键词
+                    "start_time": task_start_time
+                }
+                current_task_folder_path = os.path.join(log_dir, task_folder_relative_name)
+                if not os.path.exists(current_task_folder_path):
+                    os.makedirs(current_task_folder_path)
+                    logger.info(f"新商品搜索任务 (SearchID: {url_search_id}): 关键词 '{url_keyword}', 创建文件夹: {task_folder_relative_name}")
+                current_save_path_base = current_task_folder_path
+            else:
+                # 已存在的 search_id，继续使用之前的任务文件夹
+                task_info = active_search_tasks[url_search_id]
+                current_task_folder_path = os.path.join(log_dir, task_info["task_folder_name"])
+                # (可选) task_info["last_activity_time"] = time.time() # 如果需要超时清理逻辑
+                logger.debug(f"商品搜索任务 (SearchID: {url_search_id}) 追加数据到文件夹: {task_info['task_folder_name']}")
+                current_save_path_base = current_task_folder_path
+        
+        # --- 处理笔记API (保存到主xhs_data目录) ---
         if "api/sns/v10/search/notes" in request_url:
-            # ... (笔记处理部分代码保持不变，此处省略以减少篇幅) ...
-            # --- 处理笔记API ---
             start_time_str = time.strftime("%X")
             logger.info(f"开始处理【笔记】请求 - {start_time_str} - URL: {request_url}")
             try:
@@ -73,7 +121,7 @@ try:
                         if 'note_id' not in note_data:
                             note_data['note_id'] = note_data['id']
                         
-                        note_data['keyword'] = keyword
+                        note_data['keyword'] = url_keyword # 使用当前URL中的keyword
                         note_data['crawl_time'] = time.strftime('%Y-%m-%d %H:%M:%S')
                         note_data['data_type'] = 'note'
                         notes.append(note_data)
@@ -85,7 +133,8 @@ try:
 
             total_notes_count += len(notes)
             if notes:
-                notes_filename = f"xhs_data/notes_{time.strftime('%Y%m%d_%H%M%S')}_{keyword}.json"
+                # 笔记文件保存在 current_save_path_base (当前对于笔记是 log_dir)
+                notes_filename = os.path.join(current_save_path_base, f"notes_{time.strftime('%Y%m%d%H%M%S')}_{safe_url_keyword_for_filename}.json")
                 try:
                     with open(notes_filename, "w", encoding="utf-8") as f:
                         json.dump(notes, f, ensure_ascii=False, indent=4)
@@ -97,7 +146,7 @@ try:
                 logger.info("未提取到任何笔记内容！")
             logger.info(f"笔记处理完成 - {time.strftime('%X')}")
 
-
+        # --- 处理商品API (保存到 specific task folder or log_dir if no search_id) ---
         elif "search.xiaohongshu.com/api/search/fls/products/v5" in request_url:
             start_time_str = time.strftime("%X")
             logger.info(f"开始处理【商品】请求 - {start_time_str} - URL: {request_url}")
@@ -112,7 +161,7 @@ try:
                 products = []
                 
                 if "success" in content and content["success"] and "data" in content:
-                    data_outer = content["data"] # Renamed to avoid conflict with inner 'data'
+                    data_outer = content["data"]
                     
                     if "module" in data_outer and "data" in data_outer["module"] and isinstance(data_outer["module"]["data"], list):
                         module_data_list = data_outer["module"]["data"]
@@ -140,7 +189,6 @@ try:
                                 current_price_str = str(price_info.get("price", ""))
                                 original_price_str = str(price_info.get("origin_price", ""))
                                 
-                                # 初始化销量和标签相关变量
                                 final_sales_text = "未知销量"
                                 final_sales_numeric = None
                                 temp_sold_text = None
@@ -162,12 +210,9 @@ try:
                                                             all_tags_texts.append(tag_text)
                                                         
                                                         tag_type = tag_item.get("type")
-
-                                                        # 优先处理 "sold" 类型的销量标签
                                                         if tag_group_key == "after_price" and tag_type == "sold":
                                                             temp_sold_text = tag_text
                                                             try:
-                                                                # 解析 "sold" 文本
                                                                 _ts_text = temp_sold_text.lower()
                                                                 _num_part = ""
                                                                 _multiplier = 1
@@ -179,51 +224,35 @@ try:
                                                                     _multiplier = 1000
                                                                 else:
                                                                     _num_part = "".join(filter(str.isdigit, _ts_text))
-                                                                
-                                                                if _num_part:
-                                                                    temp_sold_numeric = int(float(_num_part) * _multiplier)
+                                                                if _num_part: temp_sold_numeric = int(float(_num_part) * _multiplier)
                                                                 else: temp_sold_numeric = None
-                                                            except ValueError:
-                                                                logger.warning(f"商品 {product_id} 'sold' 标签文本 '{temp_sold_text}' 解析数字失败。")
-                                                                temp_sold_numeric = None
+                                                            except ValueError: temp_sold_numeric = None
                                                         
-                                                        # 处理 "add_cart_people" 类型的加购标签
-                                                        elif tag_type == "add_cart_people": # 根据你的JSON示例，此类型在behavior组
+                                                        elif tag_type == "add_cart_people":
                                                             temp_add_cart_text = tag_text
                                                             try:
-                                                                # 解析 "add_cart_people" 文本
                                                                 _num_part = "".join(filter(str.isdigit, temp_add_cart_text))
-                                                                if _num_part:
-                                                                    temp_add_cart_numeric = int(_num_part)
+                                                                if _num_part: temp_add_cart_numeric = int(_num_part)
                                                                 else: temp_add_cart_numeric = None
-                                                            except ValueError:
-                                                                logger.warning(f"商品 {product_id} 'add_cart_people' 标签 '{temp_add_cart_text}' 解析数字失败。")
-                                                                temp_add_cart_numeric = None
-                                else: # tag_strategy_map 不存在或格式不对
+                                                            except ValueError: temp_add_cart_numeric = None
+                                else:
                                     logger.debug(f"商品 {product_id} 没有 tag_strategy_map 或其格式非字典。")
 
-                                # 决定最终使用哪个销量数据
                                 if temp_sold_numeric is not None:
                                     final_sales_numeric = temp_sold_numeric
                                     final_sales_text = temp_sold_text
-                                    logger.debug(f"商品 {product_id}: 使用 'sold' 数据作为销量: {final_sales_numeric} (来自文本: '{final_sales_text}')")
+                                    logger.debug(f"商品 {product_id}: 使用 'sold' 数据作为销量: {final_sales_numeric} ('{final_sales_text}')")
                                 elif temp_add_cart_numeric is not None:
                                     final_sales_numeric = temp_add_cart_numeric
-                                    final_sales_text = temp_add_cart_text # 更新销量文本为加购文本
-                                    logger.debug(f"商品 {product_id}: 未找到 'sold' 数据，使用 'add_cart_people' 数据作为销量: {final_sales_numeric} (来自文本: '{final_sales_text}')")
+                                    final_sales_text = temp_add_cart_text
+                                    logger.debug(f"商品 {product_id}: 无 'sold' 数据, 使用 'add_cart_people'替代: {final_sales_numeric} ('{final_sales_text}')")
                                 else:
-                                    # 两者都未找到，final_sales_text 保持 "未知销量", final_sales_numeric 保持 None
-                                    logger.debug(f"商品 {product_id}: 未找到 'sold' 或 'add_cart_people' 有效数据，销量未知。")
+                                    logger.debug(f"商品 {product_id}: 'sold' 和 'add_cart_people' 数据均未找到或解析失败，销量未知。")
 
                                 sales_revenue = "未知销售额"
                                 if current_price_float is not None and final_sales_numeric is not None:
-                                    sales_revenue_float = current_price_float * final_sales_numeric
-                                    sales_revenue = f"{sales_revenue_float:.2f}"
-                                elif current_price_float is None:
-                                    logger.debug(f"商品 {product_id} 无法计算销售额：价格未知。")
-                                elif final_sales_numeric is None: # 确保使用最终的数字销量判断
-                                    logger.debug(f"商品 {product_id} 无法计算销售额：数字销量未知。")
-
+                                    sales_revenue = f"{(current_price_float * final_sales_numeric):.2f}"
+                                # ... (rest of product dict creation and logging is the same) ...
                                 vendor = item_content.get("vendor", {})
                                 vendor_name = vendor.get("vendor_name", "")
                                 seller_id = vendor.get("seller_id", "")
@@ -239,15 +268,15 @@ try:
                                     "current_price_display": current_price_str,
                                     "current_price_numeric": current_price_float,
                                     "original_price_display": original_price_str,
-                                    "sales_volume_text": final_sales_text, # 使用最终确定的销量文本
-                                    "sales_volume_numeric": final_sales_numeric, # 使用最终确定的数字销量
+                                    "sales_volume_text": final_sales_text,
+                                    "sales_volume_numeric": final_sales_numeric,
                                     "sales_revenue": sales_revenue,
                                     "all_tags": list(set(all_tags_texts)),
                                     "vendor_name": vendor_name, 
                                     "seller_id": seller_id, 
                                     "main_image_url": main_image_url,
                                     "product_link": product_link, 
-                                    "keyword": keyword,
+                                    "keyword": url_keyword, # 使用当前URL中的keyword
                                     "crawl_time": time.strftime('%Y-%m-%d %H:%M:%S'), 
                                     "data_type": "product"
                                 }
@@ -265,7 +294,8 @@ try:
 
                 total_products_count += len(products)
                 if products:
-                    products_filename = f"xhs_data/products_{time.strftime('%Y%m%d_%H%M%S')}_{keyword}.json"
+                    # 商品文件保存在 current_save_path_base (可能是特定任务文件夹，也可能是log_dir)
+                    products_filename = os.path.join(current_save_path_base, f"products_{time.strftime('%Y%m%d%H%M%S')}_{safe_url_keyword_for_filename}.json")
                     try:
                         with open(products_filename, "w", encoding="utf-8") as f:
                             json.dump(products, f, ensure_ascii=False, indent=4)
