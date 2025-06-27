@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>任务生成器</title>
+    <!-- Using a modern font from Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .loader {
+            border-top-color: #3498db;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        /* Styles for the modal */
+        #preview-modal.hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 flex items-center justify-center min-h-screen py-12">
+
+    <div class="container bg-white p-8 rounded-xl shadow-lg max-w-2xl w-full mx-4">
+
+        <!-- Initial Forms Container -->
+        <div id="initial-forms">
+            <h1 class="text-3xl font-bold text-center text-gray-800 mb-8">报告生成任务</h1>
+            <!-- Step 1: Input question and create task -->
+            <div id="create-task-form">
+                <div class="mb-6">
+                    <label for="question" class="block mb-2 text-sm font-medium text-gray-700">输入您的问题创建新任务：</label>
+                    <input type="text" id="question" value="程序员加班现状" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-3" placeholder="例如：AI的未来发展趋势">
+                </div>
+                <button id="submit-btn" onclick="createTask()" class="w-full text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-md px-5 py-3 text-center transition-colors duration-300 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                    生成报告
+                </button>
+            </div>
+
+            <!-- Divider -->
+            <div class="my-6 flex items-center">
+                <div class="flex-grow border-t border-gray-200"></div>
+                <span class="flex-shrink mx-4 text-gray-400 text-sm">或</span>
+                <div class="flex-grow border-t border-gray-200"></div>
+            </div>
+
+            <!-- Query by existing ID -->
+            <div id="query-task-form">
+                 <div class="mb-6">
+                    <label for="task-id-input" class="block mb-2 text-sm font-medium text-gray-700">输入已有任务ID进行查询：</label>
+                    <input type="text" id="task-id-input" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-3" placeholder="粘贴任务ID到这里">
+                </div>
+                <button id="query-btn" onclick="queryTaskById()" class="w-full text-white bg-gray-600 hover:bg-gray-700 focus:ring-4 focus:outline-none focus:ring-gray-300 font-medium rounded-lg text-md px-5 py-3 text-center transition-colors duration-300">
+                    查询任务
+                </button>
+            </div>
+        </div>
+
+        <!-- Step 2: Display task ID and processing status -->
+        <div id="status-container" class="hidden">
+            <h3 class="text-xl font-bold text-gray-800 mb-4">任务状态</h3>
+            <div class="bg-gray-100 p-4 rounded-lg">
+                <p class="mb-2"><strong>任务ID:</strong> <span id="task-id-display" class="font-mono text-indigo-600 bg-indigo-50 px-2 py-1 rounded break-all"></span></p>
+                <div id="status-message" class="flex items-center text-gray-700 font-medium">
+                    <!-- Status message will be injected here -->
+                </div>
+            </div>
+             <div class="mt-6 text-center">
+                <a href="javascript:void(0);" id="check-status-link" onclick="checkTaskStatus()" class="text-blue-600 hover:underline text-sm hidden">手动刷新状态</a>
+                <button onclick="resetUI()" class="ml-4 text-white bg-red-500 hover:bg-red-600 font-medium rounded-lg text-sm px-4 py-2">创建新任务</button>
+            </div>
+        </div>
+
+        <!-- Error Message Display -->
+        <div id="error-container" class="hidden mt-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+            <strong class="font-bold">发生错误：</strong>
+            <span id="error-message" class="block sm:inline"></span>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div id="preview-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-6xl h-[90vh] flex flex-col">
+            <!-- Modal Header -->
+            <div class="flex justify-between items-center p-4 border-b">
+                <h3 class="text-xl font-bold text-gray-800">报告预览</h3>
+                <button onclick="closeModal()" class="text-gray-500 hover:text-gray-800">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <!-- Iframe for Content -->
+            <iframe id="html-render-iframe" class="flex-grow w-full h-full border-0" title="HTML Report Preview"></iframe>
+            <!-- Modal Footer -->
+            <div class="p-4 border-t flex justify-between items-center bg-gray-50 rounded-b-lg">
+                <div class="flex items-center space-x-4" id="pdf-link-container">
+                    <!-- PDF link will be injected here -->
+                </div>
+                <button onclick="resetUI()" class="text-white bg-blue-600 hover:bg-blue-700 font-medium rounded-lg text-sm px-5 py-2.5">开始一个新任务</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // API Endpoints for your server
+        const CREATE_TASK_URL = 'http://54.179.202.41:4040/api/task';
+        const GET_TASK_INFO_URL = 'http://54.179.202.41:4040/api/get_task_info';
+
+        // Global variables
+        let currentTaskId = null;
+        let statusInterval = null;
+
+        // Page elements
+        const initialForms = document.getElementById('initial-forms');
+        const submitBtn = document.getElementById('submit-btn');
+        const questionInput = document.getElementById('question');
+        const taskIdInput = document.getElementById('task-id-input');
+        const statusContainer = document.getElementById('status-container');
+        const taskIdDisplay = document.getElementById('task-id-display');
+        const statusMessage = document.getElementById('status-message');
+        const checkStatusLink = document.getElementById('check-status-link');
+        const pdfLinkContainer = document.getElementById('pdf-link-container');
+        const htmlRenderIframe = document.getElementById('html-render-iframe');
+        const errorContainer = document.getElementById('error-container');
+        const errorMessage = document.getElementById('error-message');
+        const previewModal = document.getElementById('preview-modal');
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorContainer.classList.remove('hidden');
+            console.error(message);
+        }
+
+        function openModal() {
+            previewModal.classList.remove('hidden');
+        }
+
+        function closeModal() {
+            previewModal.classList.add('hidden');
+            htmlRenderIframe.srcdoc = ''; // Clear iframe content
+            htmlRenderIframe.src = 'about:blank';
+        }
+
+        function resetUI() {
+            closeModal();
+            clearInterval(statusInterval);
+            currentTaskId = null;
+
+            statusContainer.classList.add('hidden');
+            errorContainer.classList.add('hidden');
+            initialForms.classList.remove('hidden');
+
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '生成报告';
+            questionInput.value = '程序员加班现状';
+            taskIdInput.value = '';
+        }
+
+        function startPolling(taskId) {
+            currentTaskId = taskId;
+            initialForms.classList.add('hidden');
+            errorContainer.classList.add('hidden');
+            statusContainer.classList.remove('hidden');
+            taskIdDisplay.textContent = currentTaskId;
+            checkTaskStatus();
+            statusInterval = setInterval(checkTaskStatus, 5000);
+        }
+
+        async function createTask() {
+            const question = questionInput.value;
+            if (!question) {
+                alert('请输入问题！');
+                return;
+            }
+            errorContainer.classList.add('hidden');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = `<div class="flex items-center justify-center"><div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>正在创建...</div>`;
+            try {
+                const response = await fetch(CREATE_TASK_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': '*/*' },
+                    body: JSON.stringify({ question: question })
+                });
+                if (!response.ok) throw new Error(`HTTP 错误! 状态: ${response.status}`);
+                const data = await response.json();
+                startPolling(data.task_id);
+            } catch (error) {
+                showError(`创建任务失败: ${error.message}.`);
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '生成报告';
+            }
+        }
+
+        function queryTaskById() {
+            const taskId = taskIdInput.value.trim();
+            if (!taskId) {
+                alert('请输入任务ID！');
+                return;
+            }
+            startPolling(taskId);
+        }
+
+        async function checkTaskStatus() {
+            if (!currentTaskId) return;
+            statusMessage.innerHTML = '<span>任务正在处理中 (pending)...</span><div class="loader w-4 h-4 border-2 border-gray-200 rounded-full ml-2"></div>';
+            checkStatusLink.classList.add('hidden');
+
+            try {
+                const response = await fetch(`${GET_TASK_INFO_URL}?task_id=${currentTaskId}`);
+                if (!response.ok) throw new Error(`HTTP 错误! 状态: ${response.status}`);
+                const data = await response.json();
+
+                if (data.status === 'finished' && data.html_url && data.pdf_url) {
+                    clearInterval(statusInterval);
+                    statusContainer.classList.add('hidden');
+
+                    try {
+                        const htmlResponse = await fetch(data.html_url);
+                        if (!htmlResponse.ok) throw new Error(`无法获取HTML报告内容, 状态: ${htmlResponse.status}. 这通常是CORS配置问题。`);
+                        const htmlContent = await htmlResponse.text();
+
+                        htmlRenderIframe.srcdoc = htmlContent;
+
+                        pdfLinkContainer.innerHTML = `
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                            </svg>
+                            <a href="${data.pdf_url}" target="_blank" class="text-blue-600 hover:underline font-medium">查看PDF报告 (新标签页)</a>
+                        `;
+
+                        openModal();
+
+                    } catch(renderError) {
+                        showError(`渲染HTML报告失败: ${renderError.message}`);
+                    }
+
+                } else if (data.status === 'pending') {
+                    console.log('任务仍在处理中...');
+                    checkStatusLink.classList.remove('hidden');
+                } else {
+                    clearInterval(statusInterval);
+                    statusMessage.textContent = `任务状态异常: ${data.status || '未知状态'}`;
+                    checkStatusLink.classList.remove('hidden');
+                }
+            } catch (error) {
+                showError(`检查状态时发生网络错误: ${error.message}.`);
+                statusMessage.innerHTML = `<span>网络错误，正在重试...</span>`;
+                checkStatusLink.classList.remove('hidden');
+            }
+        }
+
+        // Allow closing modal with Escape key
+        window.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && !previewModal.classList.contains('hidden')) {
+                closeModal();
+            }
+        });
+    </script>
+
+</body>
+</html>
