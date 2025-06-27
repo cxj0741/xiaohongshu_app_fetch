@@ -8,11 +8,11 @@ from flask import Flask, request, jsonify
 from .task_creation_service import initialize_firebase_for_api, submit_new_task_via_sdk, get_db_client_for_api
 from .models import TaskRequestModel
 from pydantic import ValidationError
-from pymongo import MongoClient
-
+from pymongo import MongoClient, DESCENDING, ASCENDING
+from flask_cors import CORS # 1. 导入 CORS
 # --- 配置 (Configuration) ---
 app = Flask(__name__)
-
+CORS(app) # 2. 初始化 CORS，允许所有跨域请求
 # 使用您的 MongoDB 连接信息
 MONGO_URI = os.environ.get(
     "MONGO_URI",
@@ -47,89 +47,71 @@ def parse_json(data):
 
 @app.route('/products', methods=['GET'])
 def get_products():
-    """
-    获取商品列表，支持分页和关键字搜索。
-    """
     db = get_db()
-    if db is None:
-        return jsonify({"error": "数据库服务不可用 (Database service unavailable)"}), 503
-
+    if db is None: return jsonify({"error": "数据库服务不可用"}), 503
     try:
-        keyword = request.args.get('keyword', None)
-        # --- 关键修改：清理关键字前后的空格 ---
-        if keyword:
-            keyword = keyword.strip()
-
+        keyword = request.args.get('keyword', '').strip()
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 10))
+        sort_by = request.args.get('sort_by', 'date_desc')
         skip = (page - 1) * limit
 
-        query = {}
-        if keyword:
-            regex_query = {"$regex": keyword, "$options": "i"}
-            query["keyword"] = regex_query
+        query = {"keyword": {"$regex": keyword, "$options": "i"}} if keyword else {}
 
-        products_cursor = db.products.find(query).skip(skip).limit(limit)
+        # 定义排序映射
+        sort_map = {
+            'date_desc': [('upload_time', DESCENDING)],
+            'price_asc': [('current_price_numeric', ASCENDING)],
+            'price_desc': [('current_price_numeric', DESCENDING)],
+            'sales_desc': [('sales_volume_numeric', DESCENDING)]
+        }
+        sort_order = sort_map.get(sort_by, [('upload_time', DESCENDING)])
+
+        products_cursor = db.products.find(query).sort(sort_order).skip(skip).limit(limit)
         products_list = list(products_cursor)
         total_products = db.products.count_documents(query)
 
         return jsonify({
-            "message": "商品数据获取成功 (Products fetched successfully)",
-            "data": parse_json(products_list),
-            "pagination": {
-                "total": total_products,
-                "page": page,
-                "limit": limit,
-                "totalPages": (total_products + limit - 1) // limit if limit > 0 else 0
-            }
+            "message": "商品数据获取成功", "data": parse_json(products_list),
+            "pagination": {"total": total_products, "page": page, "limit": limit,
+                           "totalPages": (total_products + limit - 1) // limit if limit > 0 else 0}
         }), 200
-
     except Exception as e:
-        return jsonify({"error": f"处理请求时发生错误 (An error occurred): {str(e)}"}), 500
+        return jsonify({"error": f"处理时发生错误: {str(e)}"}), 500
 
 
 @app.route('/notes', methods=['GET'])
 def get_notes():
-    """
-    获取笔记列表，支持分页和关键字搜索。
-    """
     db = get_db()
-    if db is None:
-        return jsonify({"error": "数据库服务不可用 (Database service unavailable)"}), 503
-
+    if db is None: return jsonify({"error": "数据库服务不可用"}), 503
     try:
-        keyword = request.args.get('keyword', None)
-        # --- 关键修改：清理关键字前后的空格 ---
-        if keyword:
-            keyword = keyword.strip()
-
+        keyword = request.args.get('keyword', '').strip()
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 10))
+        sort_by = request.args.get('sort_by', 'date_desc')
         skip = (page - 1) * limit
 
-        query = {}
-        if keyword:
-            regex_query = {"$regex": keyword, "$options": "i"}
-            query["keyword"] = regex_query
+        query = {"keyword": {"$regex": keyword, "$options": "i"}} if keyword else {}
 
-        notes_cursor = db.notes.find(query).skip(skip).limit(limit)
+        # 定义排序映射
+        sort_map = {
+            'date_desc': [('upload_time', DESCENDING)],
+            'likes_desc': [('stats.liked_count', DESCENDING)],
+            'collect_desc': [('stats.collected_count', DESCENDING)]
+        }
+        sort_order = sort_map.get(sort_by, [('upload_time', DESCENDING)])
+
+        notes_cursor = db.notes.find(query).sort(sort_order).skip(skip).limit(limit)
         notes_list = list(notes_cursor)
         total_notes = db.notes.count_documents(query)
 
         return jsonify({
-            "message": "笔记数据获取成功 (Notes fetched successfully)",
-            "data": parse_json(notes_list),
-            "pagination": {
-                "total": total_notes,
-                "page": page,
-                "limit": limit,
-                "totalPages": (total_notes + limit - 1) // limit if limit > 0 else 0
-            }
+            "message": "笔记数据获取成功", "data": parse_json(notes_list),
+            "pagination": {"total": total_notes, "page": page, "limit": limit,
+                           "totalPages": (total_notes + limit - 1) // limit if limit > 0 else 0}
         }), 200
-
     except Exception as e:
-        return jsonify({"error": f"处理请求时发生错误 (An error occurred): {str(e)}"}), 500
-
+        return jsonify({"error": f"处理时发生错误: {str(e)}"}), 500
 # 应用启动时初始化 Firebase (只执行一次)
 if not initialize_firebase_for_api():
     # 可以选择记录错误并优雅退出，或者让应用在没有数据库连接的情况下继续运行（如果部分功能可用）

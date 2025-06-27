@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据查询与任务下发</title>
+    <style>
+        :root {
+            --primary-color: #007bff;
+            --primary-hover: #0056b3;
+            --success-color: #28a745;
+            --success-hover: #218838;
+            --light-gray: #f8f9fa;
+            --medium-gray: #e9ecef;
+            --dark-gray: #6c757d;
+            --text-color: #212529;
+            --white-color: #ffffff;
+            --border-color: #dee2e6;
+            --error-bg: #fce8e6;
+            --error-text: #c52920;
+            --success-bg: #e9f9ee;
+        }
+
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; background-color: var(--light-gray); color: var(--text-color); }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .section-card { background-color: var(--white-color); padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 30px; }
+        h1, h2 { color: var(--text-color); border-bottom: 2px solid var(--medium-gray); padding-bottom: 10px; margin-bottom: 24px; }
+        h2 { margin-top: 0; border: none; padding-bottom: 15px; }
+
+        .btn { padding: 12px 25px; font-size: 16px; font-weight: 500; color: var(--white-color); border: none; border-radius: 25px; cursor: pointer; transition: background-color 0.2s, opacity 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+        .btn:disabled { opacity: 0.7; cursor: not-allowed; }
+        .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: var(--white-color); border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        #task-creator-form .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        #task-creator-form .form-group { display: flex; flex-direction: column; }
+        #task-creator-form label { margin-bottom: 5px; font-weight: 500; color: var(--dark-gray); }
+        #task-creator-form input, #task-creator-form select, #task-creator-form textarea { padding: 10px; font-size: 14px; border: 1px solid var(--border-color); border-radius: 4px; }
+        #task-creator-form .full-width { grid-column: 1 / -1; }
+        #task-creator-form details { border: 1px solid #eee; border-radius: 4px; padding: 10px; margin-top: 10px; }
+        #task-creator-form summary { font-weight: 500; cursor: pointer; }
+        #task-submit-button { background-color: var(--success-color); border-radius: 5px; margin-top: 10px; width: 100%; }
+        #task-submit-button:hover:not(:disabled) { background-color: var(--success-hover); }
+        #task-status { margin-top: 15px; text-align: center; padding: 10px; border-radius: 5px; display: none; }
+        #task-status.success { background-color: var(--success-bg); color: var(--success-hover); }
+        #task-status.error { background-color: var(--error-bg); color: var(--error-text); }
+        .hidden { display: none; }
+
+        .search-bar { display: flex; gap: 10px; }
+        #search-input { flex-grow: 1; padding: 12px 15px; font-size: 16px; border: 1px solid var(--border-color); border-radius: 25px; transition: all 0.2s; }
+        #search-input:focus { border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(0,123,255, 0.2); }
+        #search-button { background-color: var(--primary-color); }
+        #search-button:hover:not(:disabled) { background-color: var(--primary-hover); }
+
+        .controls-bar { display: flex; justify-content: flex-end; margin-bottom: 20px; }
+        .controls-bar .form-group { flex-direction: row; align-items: center; gap: 10px; }
+        .controls-bar label { margin-bottom: 0; }
+        .sort-select { padding: 8px; border-radius: 5px; border: 1px solid var(--border-color); }
+
+        .info-card { background-color: var(--white-color); border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 20px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 15px; }
+        .card-header { border-bottom: 1px solid var(--medium-gray); padding-bottom: 15px; }
+        .card-header h3 { margin: 0; font-size: 1.4em; }
+        .card-header h3 a { color: inherit; text-decoration: none; }
+        .card-header h3 a:hover { color: var(--primary-color); }
+        .card-header p { margin: 5px 0 0; color: var(--dark-gray); font-family: monospace; font-size: 0.9em; }
+        .card-body p { margin: 0; line-height: 1.6; }
+        .details-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; border-top: 1px solid var(--medium-gray); padding-top: 15px; }
+        .detail-item { font-size: 0.9em; }
+        .detail-item strong { display: block; color: var(--dark-gray); margin-bottom: 4px; font-weight: 500; }
+        .detail-item span, .detail-item div { word-wrap: break-word; }
+        .tags-container .tag { display: inline-block; background-color: var(--medium-gray); color: var(--text-color); padding: 4px 10px; border-radius: 15px; font-size: 0.85em; margin-right: 5px; margin-top: 5px; }
+        .load-more-container { text-align: center; margin-top: 20px; }
+        .load-more-btn { background-color: var(--primary-color); }
+        .status-message { text-align: center; color: var(--dark-gray); padding: 20px 0; min-height: 20px; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+
+        <div class="section-card">
+            <h2>创建抓取任务</h2>
+            <form id="task-creator-form">
+                <!-- Task form content remains the same -->
+                <div class="form-grid">
+                    <div class="form-group"> <label for="action-type">任务类型</label> <select id="action-type"> <option value="scrape_note">抓取笔记</option> <option value="scrape_product">抓取商品</option> </select> </div>
+                    <div class="form-group"> <label for="task-keyword">搜索关键字</label> <input type="text" id="task-keyword" required> </div>
+                    <div class="form-group"> <label for="task-swipe-count">滑动次数</label> <input type="number" id="task-swipe-count" value="10" min="1"> </div>
+                </div>
+                <div id="note-params" class="form-group full-width">
+                     <details> <summary>笔记高级筛选</summary> <div class="form-group" style="margin-top: 10px;"> <label for="note-filters">筛选参数 (JSON格式)</label> <textarea id="note-filters" placeholder='例如: {"sort_by_option": "最新"}'></textarea> </div> </details>
+                </div>
+                <div id="product-params" class="hidden full-width">
+                    <details> <summary>商品高级筛选</summary> <div class="form-grid" style="margin-top: 10px;">
+                        <div class="form-group"> <label for="product-sort-by">商品排序</label> <input type="text" id="product-sort-by" placeholder="例如: 销量优先"> </div>
+                        <div class="form-group"> <label for="product-min-price">最低价</label> <input type="number" id="product-min-price" placeholder="例如: 100"> </div>
+                        <div class="form-group"> <label for="product-max-price">最高价</label> <input type="number" id="product-max-price" placeholder="例如: 500"> </div>
+                        <div class="form-group"> <label for="product-logistics">物流权益 (逗号分隔)</label> <input type="text" id="product-logistics" placeholder="例如: 退货包运费,24小时发货"> </div>
+                        <div class="form-group"> <label for="product-scopes">搜索范围</label> <input type="text" id="product-scopes" placeholder="例如: 旗舰店"> </div>
+                    </div> </details>
+                </div>
+                <div class="form-group full-width"> <button type="submit" id="task-submit-button" class="btn">提交任务</button> </div>
+            </form>
+            <div id="task-status"></div>
+        </div>
+
+        <div class="section-card">
+            <h2>查询已抓取数据</h2>
+            <div class="search-bar">
+                <input type="text" id="search-input" placeholder="输入关键字搜索...">
+                <button id="search-button" class="btn">搜索</button>
+            </div>
+        </div>
+
+        <h1>热卖商品</h1>
+        <div class="controls-bar">
+             <div class="form-group">
+                <label for="products-sort-by">排序方式</label>
+                <select id="products-sort-by" class="sort-select">
+                    <option value="date_desc">最新上传</option>
+                    <option value="sales_desc">销量优先</option>
+                    <option value="price_asc">价格从低到高</option>
+                    <option value="price_desc">价格从高到低</option>
+                </select>
+            </div>
+        </div>
+        <div id="products-list"></div>
+        <div class="load-more-container"><button id="load-more-products" class="btn load-more-btn hidden">加载更多</button></div>
+        <p id="products-status" class="status-message"></p>
+
+        <h1>达人笔记</h1>
+         <div class="controls-bar">
+             <div class="form-group">
+                <label for="notes-sort-by">排序方式</label>
+                <select id="notes-sort-by" class="sort-select">
+                    <option value="date_desc">最新上传</option>
+                    <option value="likes_desc">点赞数优先</option>
+                    <option value="collect_desc">收藏数优先</option>
+                </select>
+            </div>
+        </div>
+        <div id="notes-list"></div>
+        <div class="load-more-container"><button id="load-more-notes" class="btn load-more-btn hidden">加载更多</button></div>
+        <p id="notes-status" class="status-message"></p>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://127.0.0.1:5050';
+        let productPage = 1, notePage = 1, currentKeyword = '';
+        let productSortBy = 'date_desc', noteSortBy = 'date_desc';
+        const getEl = (id) => document.getElementById(id);
+
+        const setLoading = (button, isLoading) => {
+            if (!button) return;
+            button.disabled = isLoading;
+            const spinner = button.querySelector('.spinner');
+            if (isLoading && !spinner) {
+                const spinnerEl = document.createElement('span');
+                spinnerEl.className = 'spinner';
+                button.prepend(spinnerEl);
+            } else if (!isLoading && spinner) spinner.remove();
+        };
+        const showTaskStatus = (message, type) => {
+            const el = getEl('task-status');
+            if(!el) return;
+            el.textContent = message;
+            el.className = type;
+            el.style.display = 'block';
+        };
+        const handleTaskFormSubmit = async (e) => {
+            e.preventDefault();
+            const submitBtn = getEl('task-submit-button');
+            setLoading(submitBtn, true);
+            showTaskStatus('', '');
+
+            const action = getEl('action-type').value;
+            let parameters = {
+                keyword: getEl('task-keyword').value,
+                swipe_count: parseInt(getEl('task-swipe-count').value, 10),
+            };
+
+            try {
+                if (action === 'scrape_note') {
+                    const filtersText = getEl('note-filters').value;
+                    if (filtersText) parameters.filters = JSON.parse(filtersText);
+                } else {
+                    const minPrice = parseFloat(getEl('product-min-price').value);
+                    const maxPrice = parseFloat(getEl('product-max-price').value);
+                    const logistics = getEl('product-logistics').value;
+                    Object.assign(parameters, {
+                        sort_by: getEl('product-sort-by').value || null,
+                        search_scopes: getEl('product-scopes').value || null,
+                        min_price: isNaN(minPrice) ? null : minPrice,
+                        max_price: isNaN(maxPrice) ? null : maxPrice,
+                        logistics_services: logistics ? logistics.split(',').map(s => s.trim()) : null,
+                    });
+                    Object.keys(parameters).forEach(key => (parameters[key] === null || parameters[key] === '') && delete parameters[key]);
+                }
+            } catch(err) {
+                showTaskStatus('参数格式错误 (笔记筛选参数需为有效JSON)!', 'error');
+                setLoading(submitBtn, false);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/tasks`, {
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ actions: action, parameters })
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error + ": " + (result.details?.join(', ') || ''));
+                showTaskStatus(`任务创建成功! Task ID: ${result.taskId}`, 'success');
+                getEl('task-creator-form').reset();
+                getEl('action-type').dispatchEvent(new Event('change'));
+            } catch (err) {
+                showTaskStatus(`任务创建失败: ${err.message}`, 'error');
+            } finally {
+                setLoading(submitBtn, false);
+            }
+        };
+        const toggleTaskParams = () => {
+            const actionSelect = getEl('action-type');
+            if (!actionSelect) return;
+            const isNote = actionSelect.value === 'scrape_note';
+            getEl('note-params').classList.toggle('hidden', !isNote);
+            getEl('product-params').classList.toggle('hidden', isNote);
+        };
+
+        const fetchData = async (type, keyword, page, sortBy, { append = false, button } = {}) => {
+            const statusEl = getEl(`${type}-status`);
+            const btnEl = getEl(`load-more-${type}`);
+            const containerEl = getEl(`${type}-list`);
+            if (!statusEl || !btnEl || !containerEl) {
+                console.error(`Error: Elements for type "${type}" not found.`);
+                return;
+            }
+            if (button) setLoading(button, true);
+            if (!append) statusEl.textContent = '正在加载...';
+            btnEl.classList.add('hidden');
+            try {
+                const url = `${API_BASE_URL}/${type}?page=${page}&limit=10&keyword=${encodeURIComponent(keyword)}&sort_by=${sortBy}`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`API 请求失败: ${response.status}`);
+                const result = await response.json();
+                if (!append) containerEl.innerHTML = '';
+                if (type === 'products') renderProductCards(result.data, containerEl);
+                else renderNoteCards(result.data, containerEl);
+                const { total, page: currentPageNum, limit } = result.pagination;
+                if (total === 0 && !append) statusEl.textContent = '没有找到相关内容。';
+                else if (currentPageNum * limit >= total) {
+                    statusEl.textContent = '已加载全部内容。';
+                    btnEl.classList.add('hidden');
+                } else {
+                    statusEl.textContent = '';
+                    btnEl.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error(`获取 ${type} 数据时出错:`, error);
+                statusEl.textContent = `加载失败，请确保API服务正在运行。`;
+            } finally {
+                if (button) setLoading(button, false);
+            }
+        };
+
+        const renderProductCards = (data, container) => {
+            if (!container) return;
+            if (data.length === 0 && container.innerHTML === '') return;
+            data.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'info-card';
+
+                const tags = item.all_tags && Array.isArray(item.all_tags) ? item.all_tags.map(t => `<span class="tag">${t}</span>`).join('') : '无';
+                const crawlTime = item.crawl_time?.$date ? new Date(item.crawl_time.$date).toLocaleString() : 'N/A';
+                const uploadTime = item.upload_time?.$date ? new Date(item.upload_time.$date).toLocaleString() : 'N/A';
+                const productLink = item.product_link || '#';
+
+                card.innerHTML = `
+                    <div class="card-header">
+                        <h3><a href="${productLink}" target="_blank" rel="noopener noreferrer">${item.title || '无标题'}</a></h3>
+                        <p>Product ID: ${item.product_id || 'N/A'}</p>
+                    </div>
+                    <div class="details-grid">
+                        <div class="detail-item"><strong>当前价格</strong><span>${item.current_price_display || 'N/A'}</span></div>
+                        <div class="detail-item"><strong>原始价格</strong><span>${item.original_price_display || 'N/A'}</span></div>
+                        <div class="detail-item"><strong>销量</strong><span>${item.sales_volume_text || 'N/A'}</span></div>
+                        <div class="detail-item"><strong>销售额</strong><span>${item.sales_revenue || 'N/A'}</span></div>
+                        <div class="detail-item"><strong>供应商</strong><span>${item.vendor ? (item.vendor.nickname || 'N/A') : 'N/A'}</span></div>
+                        <div class="detail-item"><strong>搜索词</strong><span>${item.keyword || 'N/A'}</span></div>
+                        <div class="detail-item"><strong>采集时间</strong><span>${crawlTime}</span></div>
+                        <div class="detail-item"><strong>上传时间</strong><span>${uploadTime}</span></div>
+                        <div class="detail-item tags-container" style="grid-column: 1 / -1;">
+                            <strong>标签</strong>
+                            <div>${tags}</div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        };
+
+        const renderNoteCards = (data, container) => {
+            if (!container) return;
+            if (data.length === 0 && container.innerHTML === '') return;
+            data.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'info-card';
+                const userId = item.user ? item.user.user_id : 'N/A';
+                const statsInfo = item.stats ? `点赞: ${item.stats.liked_count || 0}, 收藏: ${item.stats.collected_count || 0}` : 'N/A';
+                const tags = item.tags && Array.isArray(item.tags) ? item.tags.map(t => `<span class="tag">${t}</span>`).join('') : '无';
+                const crawlTime = item.crawl_time?.$date ? new Date(item.crawl_time.$date).toLocaleString() : 'N/A';
+                const uploadTime = item.upload_time?.$date ? new Date(item.upload_time.$date).toLocaleString() : 'N/A';
+                card.innerHTML = `
+                    <div class="card-header"><h3>${item.title || '无标题'}</h3><p>Note ID: ${item.note_id || 'N/A'}</p></div>
+                    <div class="card-body"><p>${item.desc || '无描述'}</p></div>
+                    <div class="details-grid">
+                        <div class="detail-item"><strong>类型</strong><span>${item.type || 'N/A'}</span></div>
+                        <div class="detail-item"><strong>用户ID</strong><span>${userId}</span></div>
+                        <div class="detail-item"><strong>数据统计</strong><span>${statsInfo}</span></div>
+                        <div class="detail-item"><strong>采集时间</strong><span>${crawlTime}</span></div>
+                        <div class="detail-item"><strong>上传时间</strong><span>${uploadTime}</span></div>
+                        <div class="detail-item tags-container" style="grid-column: 1 / -1;"><strong>标签</strong><div>${tags}</div></div>
+                    </div>`;
+                container.appendChild(card);
+            });
+        };
+
+        const handleSearch = () => {
+            currentKeyword = getEl('search-input').value;
+            productPage = 1; notePage = 1;
+            fetchData('products', currentKeyword, productPage, productSortBy, { button: getEl('search-button') });
+            fetchData('notes', currentKeyword, notePage, noteSortBy, { button: getEl('search-button') });
+        };
+
+        // --- 事件监听器绑定 ---
+        const taskForm = getEl('task-creator-form');
+        if (taskForm) taskForm.addEventListener('submit', handleTaskFormSubmit);
+        const actionSelect = getEl('action-type');
+        if (actionSelect) actionSelect.addEventListener('change', toggleTaskParams);
+        const searchButton = getEl('search-button');
+        if (searchButton) searchButton.addEventListener('click', handleSearch);
+        const searchInput = getEl('search-input');
+        if (searchInput) searchInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') handleSearch(); });
+        const loadMoreProducts = getEl('load-more-products');
+        if (loadMoreProducts) loadMoreProducts.addEventListener('click', () => { productPage++; fetchData('products', currentKeyword, productPage, productSortBy, { append: true, button: loadMoreProducts }); });
+        const loadMoreNotes = getEl('load-more-notes');
+        if (loadMoreNotes) loadMoreNotes.addEventListener('click', () => { notePage++; fetchData('notes', currentKeyword, notePage, noteSortBy, { append: true, button: loadMoreNotes }); });
+
+        const productsSortSelect = getEl('products-sort-by');
+        if(productsSortSelect) productsSortSelect.addEventListener('change', (e) => {
+            productSortBy = e.target.value;
+            productPage = 1;
+            fetchData('products', currentKeyword, productPage, productSortBy);
+        });
+
+        const notesSortSelect = getEl('notes-sort-by');
+        if(notesSortSelect) notesSortSelect.addEventListener('change', (e) => {
+            noteSortBy = e.target.value;
+            notePage = 1;
+            fetchData('notes', currentKeyword, notePage, noteSortBy);
+        });
+
+        // --- 页面初始化 ---
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchData('products', '', 1, productSortBy);
+            fetchData('notes', '', 1, noteSortBy);
+            toggleTaskParams();
+        });
+    </script>
+</body>
+</html>
